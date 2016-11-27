@@ -163,7 +163,7 @@ def request_stream(data_stream, rate, interim_results=True):
         # See http://g.co/cloud/speech/docs/languages
         # for a list of supported languages.
         language_code='en-US',  # a BCP-47 language tag
-        speech_context={"phrases":["Tega","hi", "Huawei", "Hae Won", "Ishaan", "Mirko", "Sooyeon", "Jin Joo", "Hooli"]},
+        speech_context={"phrases":["Tega","hi", "demo", "Huawei", "Haewon", "Ishaan", "Mirko", "Sooyeon", "Jin Joo", "Hooli"]},
     )
     streaming_config = cloud_speech.StreamingRecognitionConfig(
         interim_results=interim_results,

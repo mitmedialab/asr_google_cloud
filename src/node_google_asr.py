@@ -142,7 +142,7 @@ def request_stream(data_stream, rate, interim_results=True):
         # See http://g.co/cloud/speech/docs/languages
         # for a list of supported languages.
         language_code='en-US',  # a BCP-47 language tag
-        speech_context={"phrases":["Tega","hi", "Huawei", "Hae Won", "Ishaan", "Mirko", "Soo Young", "Jin Joo", "Hooli"]},
+        speech_context={"phrases":["Tega", "Huawei", "Haewon", "demo", "Ishaan", "Mirko", "Sooyoung", "Jinjoo", "Hooli", "tree", "turtle", "yeah", "yup"]},
     )
     streaming_config = cloud_speech.StreamingRecognitionConfig(
         interim_results=interim_results,
@@ -194,7 +194,7 @@ def listen_print_loop(recognize_stream):
 
         else:
             pub_asr_result.publish(str(result.alternatives[0].transcript))
-            #print(transcript)
+            print(transcript)
         
             if (time.time() - init_time) > 0.85*DEADLINE:
                 print("Restarting at the end of speech")
@@ -204,8 +204,8 @@ def listen_print_loop(recognize_stream):
 
             # Exit recognition if any of the transcribed phrases could be
             # one of our keywords.
-            if re.search(r'\b(Tega|taylor|tiger|Taylor)\b', transcript, re.I):
-                print('Exiting..')
+            #if re.search(r'\b(Tega|taylor|tiger|Taylor)\b', transcript, re.I):
+            #    print('Exiting..')
                 #break
 
             num_chars_printed = 0
