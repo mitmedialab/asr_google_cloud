@@ -50,7 +50,12 @@ SPEECH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 CONTINUOUS_REQUEST = True
 
 init_time = 0
+node = rospy.init_node('google_asr', anonymous = False)
 pub_asr_result = rospy.Publisher('asr_result', String, queue_size = 10)
+
+#sub_asr_request = rospy.Subscriber('asr_request', String, onNewAsrRequest)
+sub_audio = ''
+
 
 def make_channel(host, port):
     """Creates an SSL channel with auth credentials from the environment."""
@@ -84,6 +89,11 @@ def _audio_data_generator(buff):
         The function will block until at least one data chunk is available.
     """
     while True:
+
+        if (time.time() - init_time) > 0.9 * DEADLINE:
+            print("Restarting before time out")
+            break
+
         # Use a blocking get() to ensure there's at least one chunk of data
         chunk = buff.get()
         if not chunk:
@@ -105,19 +115,28 @@ def _fill_buffer(audio_stream, args):
     """Continuously collect data from the audio stream, into the buffer."""
 
     buff = args
+
+    if buff.full():
+        buff.queue.clear()
+
     buff.put(binascii.unhexlify(audio_stream.data))
+
+    #print "buffer size: %s" % buff.qsize()
+
 
 # [START audio_stream]
 @contextlib.contextmanager
 def record_audio(rate):
+    global sub_audio
     """Opens a recording stream in a context manager."""
     # Create a thread-safe buffer of audio data
-    buff = queue.Queue()
+    buff = queue.Queue(maxsize=10)
+    buff.queue.clear()
 
     # Spin up a separate thread to buffer audio data from the microphone
     # This is necessary so that the input device's buffer doesn't overflow
     # while the calling thread makes network requests, etc.
-
+    print "starting transcription"
     sub_audio = rospy.Subscriber('android_audio', String, _fill_buffer, buff)
 
     yield _audio_data_generator(buff)
@@ -154,9 +173,6 @@ def request_stream(data_stream, rate, interim_results=True):
 
     for data in data_stream:
 
-        if (time.time() - init_time) > 0.9*DEADLINE:
-            print("Restarting before time out")
-            break
         #else:
         #    print(time.time() - init_time)
         # Subsequent requests can all just have the content
@@ -165,62 +181,70 @@ def request_stream(data_stream, rate, interim_results=True):
 
 def listen_print_loop(recognize_stream):
     num_chars_printed = 0
-    for resp in recognize_stream:
-        if resp.error.code != code_pb2.OK:
-            print RuntimeError('Restarting from server error: ' + resp.error.message)
-            break
 
+    try:
+        for resp in recognize_stream:
 
-
-        if not resp.results:
-            continue
-
-        # Display the transcriptions & their alternatives
-        #for result in resp.results:
-        #    print(result.alternatives)
-        
-        # Display the top transcription
-        result = resp.results[0]
-        transcript = result.alternatives[0].transcript
-
-        # Display interim results, but with a carriage return at the end of the
-        # line, so subsequent lines will overwrite them.
-        if not result.is_final:
-            # If the previous result was longer than this one, we need to print
-            # some extra spaces to overwrite the previous result
-            #overwrite_chars = ' ' * max(0, num_chars_printed - len(transcript))
-
-            #sys.stdout.write(transcript + overwrite_chars + '\r')
-            #sys.stdout.flush()
-            num_chars_printed = len(transcript)
-
-        else:
-            pub_asr_result.publish(str(result.alternatives[0].transcript))
-            print(transcript)
-        
-            if (time.time() - init_time) > 0.85*DEADLINE:
-                print("Restarting at the end of speech")
+            if resp.error.code != code_pb2.OK:
+                print RuntimeError('Restarting from server error: ' + resp.error.message)
                 break
-            #else:
-            #    print(time.time() - init_time)
 
-            # Exit recognition if any of the transcribed phrases could be
-            # one of our keywords.
-            #if re.search(r'\b(Tega|taylor|tiger|Taylor)\b', transcript, re.I):
-            #    print('Exiting..')
-                #break
 
-            num_chars_printed = 0
+
+            if not resp.results:
+                continue
+
+            # Display the transcriptions & their alternatives
+            #for result in resp.results:
+            #    print(result.alternatives)
+
+            # Display the top transcription
+            result = resp.results[0]
+            transcript = result.alternatives[0].transcript
+
+            # Display interim results, but with a carriage return at the end of the
+            # line, so subsequent lines will overwrite them.
+            if not result.is_final:
+                # If the previous result was longer than this one, we need to print
+                # some extra spaces to overwrite the previous result
+                overwrite_chars = ' ' * max(0, num_chars_printed - len(transcript))
+
+                sys.stdout.write(transcript + overwrite_chars + '\r')
+                sys.stdout.flush()
+                num_chars_printed = len(transcript)
+
+            else:
+                pub_asr_result.publish(str(result.alternatives[0].transcript))
+                print(transcript)
+
+                if (time.time() - init_time) > 0.85*DEADLINE:
+                    print("Restarting at the end of speech")
+                    break
+                #else:
+                #    print(time.time() - init_time)
+
+                # Exit recognition if any of the transcribed phrases could be
+                # one of our keywords.
+                #if re.search(r'\b(Tega|taylor|tiger|Taylor)\b', transcript, re.I):
+                #    print('Exiting..')
+                    #break
+
+                num_chars_printed = 0
+    except:
+        print "Restarting from recognize_stream error"
+        return
+
 
 
 def start():
-    global init_time
+    global init_time, is_listen
 
     with cloud_speech.beta_create_Speech_stub(
             make_channel('speech.googleapis.com', 443)) as service:
         # For streaming audio from the microphone, there are three threads.
         # First, a thread that collects audio data as it comes in
         with record_audio(RATE) as buffered_audio_data:
+
             # Second, a thread that sends requests with that data
             requests = request_stream(buffered_audio_data, RATE)
             # Third, a thread that listens for transcription responses
@@ -235,19 +259,22 @@ def start():
             # Now, put the transcription responses to use.
             try:
                 listen_print_loop(recognize_stream)
-
                 recognize_stream.cancel()
+                sub_audio.unregister()
 
                 if CONTINUOUS_REQUEST:
-                    #respun
+                    # respun
                     start()
             except face.CancellationError:
                 # This happens because of the interrupt handler
-                pass
+                print "face CancellationError"
+                #pass
+
+
+
 
 
 def main():
-    node = rospy.init_node('google_asr')
     start()
 
 if __name__ == '__main__':
