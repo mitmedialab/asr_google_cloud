@@ -30,9 +30,11 @@ from grpc.beta import implementations
 from grpc.framework.interfaces.face import face
 import pyaudio
 from six.moves import queue
+from time import sleep
 
 import rospy
 from std_msgs.msg import String
+from asr_google_cloud.msg import AsrResult
 
 # Audio recording parameters
 RATE = 16000
@@ -49,7 +51,25 @@ SPEECH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 CONTINUOUS_REQUEST = True
 
 init_time = 0
-pub_asr_result = rospy.Publisher('asr_result', String, queue_size = 10)
+pub_asr_result = rospy.Publisher('asr_result', AsrResult, queue_size = 10)
+sub_asr_start = ''
+is_publish = True
+
+def onNewAsrStart(data):
+    global is_publish
+    print data.data
+    if "stop" in data.data:
+        is_publish = False
+        msg = AsrResult()
+        msg.header.stamp = rospy.Time.now()
+        msg.transcription = "df#$%sdfg#12"
+        msg.confidence = 100.0
+        pub_asr_result.publish(msg)
+        #pub_asr_result.publish("df#$%sdfg#12")
+    elif "start" in data.data:
+        is_publish = True
+
+
 
 def make_channel(host, port):
     """Creates an SSL channel with auth credentials from the environment."""
@@ -190,6 +210,9 @@ def listen_print_loop(recognize_stream):
             print RuntimeError('Restarting from server error: ' + resp.error.message)
             break
 
+        if not is_publish:
+            print('Exiting..')
+            break
 
         if not resp.results:
             continue
@@ -215,10 +238,15 @@ def listen_print_loop(recognize_stream):
             num_chars_printed = len(transcript)
 
         else:
-            pub_asr_result.publish(str(result.alternatives[0].transcript))
+            msg = AsrResult()
+            msg.header.stamp = rospy.Time.now()
+            msg.transcription = str(result.alternatives[0].transcript)
+            msg.confidence = result.alternatives[0].confidence
+            pub_asr_result.publish(msg)
 
             print(transcript)
-        
+            print(result.alternatives[0].confidence)
+
             if (time.time() - init_time) > 0.85*DEADLINE:
                 print("Restarting at the end of speech")
                 break
@@ -227,9 +255,9 @@ def listen_print_loop(recognize_stream):
 
             # Exit recognition if any of the transcribed phrases could be
             # one of our keywords.
-            if re.search(r'\b(exit|quit)\b', transcript, re.I):
-                print('Exiting..')
-                break
+            #if re.search(r'\b(exit|quit)\b', transcript, re.I):
+            #    print('Exiting..')
+            #    break
 
             num_chars_printed = 0
 
@@ -237,41 +265,53 @@ def listen_print_loop(recognize_stream):
 def start():
     global init_time
 
-    with cloud_speech.beta_create_Speech_stub(
-            make_channel('speech.googleapis.com', 443)) as service:
-        # For streaming audio from the microphone, there are three threads.
-        # First, a thread that collects audio data as it comes in
-        with record_audio(RATE, CHUNK) as buffered_audio_data:
-            # Second, a thread that sends requests with that data
-            requests = request_stream(buffered_audio_data, RATE)
-            # Third, a thread that listens for transcription responses
-            recognize_stream = service.StreamingRecognize(
-                requests, DEADLINE_SECS)
+    try:
 
-            init_time = time.time()
+        with cloud_speech.beta_create_Speech_stub(
+                make_channel('speech.googleapis.com', 443)) as service:
+            # For streaming audio from the microphone, there are three threads.
+            # First, a thread that collects audio data as it comes in
+            with record_audio(RATE, CHUNK) as buffered_audio_data:
+                # Second, a thread that sends requests with that data
+                requests = request_stream(buffered_audio_data, RATE)
+                # Third, a thread that listens for transcription responses
+                recognize_stream = service.StreamingRecognize(
+                    requests, DEADLINE_SECS)
 
-            # Exit things cleanly on interrupt
-            signal.signal(signal.SIGINT, lambda *_: recognize_stream.cancel())
+                init_time = time.time()
 
-            # Now, put the transcription responses to useo
-            try:
-                listen_print_loop(recognize_stream)
+                # Exit things cleanly on interrupt
+                signal.signal(signal.SIGINT, lambda *_: recognize_stream.cancel())
 
-                recognize_stream.cancel()
+                # Now, put the transcription responses to useo
+                try:
+                    listen_print_loop(recognize_stream)
 
-                if CONTINUOUS_REQUEST:
-                    #respun
-                    start()
-            except face.CancellationError:
-                # This happens because of the interrupt handler
-                pass
+                    recognize_stream.cancel()
+
+                    while not is_publish:
+                        sleep(0.5)
+
+                    if CONTINUOUS_REQUEST:
+                        #respun
+                        start()
+                except face.CancellationError:
+                    # This happens because of the interrupt handler
+                    pass
+    except:
+            start()
+
+
 
 
 def main():
-    node = rospy.init_node('google_asr')
- #   sub_audio = rospy.Subscriber('asr_request', String, onASRRequest)
+    global sub_asr_start
 
+    node = rospy.init_node('google_asr')
+    sub_asr_start = rospy.Subscriber('asr_start', String, onNewAsrStart)
     start()
+
+    rospy.spin()
 
 if __name__ == '__main__':
     main()
