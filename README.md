@@ -25,7 +25,8 @@ If you're using bash environment, add the followings in your .bashrc (for Linux)
 * Install grpc requirements:
 
     ```sh
-    $ pip install -r google_grpc_requirements.txt
+    $ sudo apt-get install portaudio19-dev python-all-dev
+    $ sudo pip install -r google_grpc_requirements.txt
     ```
     
     `node_pyaudio_google_asr.py` uses the [PyAudio][pyaudio] library to stream audio from your
