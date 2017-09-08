@@ -1,3 +1,17 @@
+# Ignore vim/gvim swap files
+*.swp
+*.swo
+
+# OS-generated files
+.DS_Store*
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+[Tt]humbs.db
+
+# These are git's automatically generated list of python stuff to ignore:
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
