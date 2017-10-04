@@ -30,7 +30,11 @@ In particular, you can use the Google Cloud SDK when running locally.
 1. (Recommended) Install [pipenv](http://pipenv.org/) if you do not already
    have it.
 
-2. Run `pipenv install` and all the dependencies listed in the Pipfile will be
+2. Run `pipenv --two --site-packages` to set up a virtual environment with
+   python 2 and global site-packages available (which means you won't have to
+   install ROS in the virtual environment).
+
+3. Run `pipenv install` and all the dependencies listed in the Pipfile will be
    installed for you.
 
 However, note that pip may not be able to successfully install portaudio, which
@@ -59,6 +63,20 @@ In addition, these scripts were developed and tested with:
 - Python 2.7.6
 - Ubuntu 14.04 LTS 32-bit
 - ROS Indigo
+
+If you run into path issues, you may need to create a path file to tell python
+where to look for some stuff. For example, if ROS is not installed with pipenv,
+you may need to create a file called "ros.pth" with the paths to ROS libraries
+in it:
+
+```
+/home/username/projects/ros_catkin_ws/devel/lib/python2.7/dist-packages
+/opt/ros/indigo/lib/python2.7/dist-packages
+```
+
+Put this file in
+`~/.local/share/virtualenvs/name_of_your_venv/lib/python2.7/site-packages`.
+
 
 ### If you need to mess with authentication or other Google Cloud settings
 
@@ -97,7 +115,7 @@ complete](https://github.com/grpc/grpc/issues/282).
 * To run `node_pyaudio_google_asr.py`:
 
 ```sh
-$ pipenv run node_pyaudio_google_asr.py
+$ python node_pyaudio_google_asr.py
 ```
 
 This code listens to your computer's microphone input and publishes ASR result
