@@ -43,7 +43,7 @@ class RosAudioStream(object):
     """ Open an audio stream over ROS as a generator that gives us chunks of
     audio data.
     """
-    def __init__(self, sample_rate, buffer_size):
+    def __init__(self):
         # Thread-safe buffer of audio data.
         self._buffer = queue.Queue()
         # The audio stream starts out closed.
@@ -137,8 +137,56 @@ def handle_responses(responses):
             msg.transcription = str(response.results[0].alternatives[0].
                                     transcript)
             msg.confidence = response.results[0].alternatives[0].confidence
-            global pub_asr_result
             pub_asr_result.publish(msg)
+            # Restart streaming to Google so we don't hit the audio limit.
+            run_asr(sample_rate)
+        # If we should publish interim results...
+        elif publish_interim:
+            # TODO
+            print "TODO publish interim results"
+
+
+def run_asr(sample_rate):
+    """ Stream audio to Google and get results back. """
+    # If no results streaming is enabled, don't bother streaming audio to
+    # Google for processing.
+    if not publish_final and not publish_interim and not publish_alternatives:
+        print "You didn't tell us to publish any results (final, interim, or \
+            alternatives), so we're not streaming audio to Google..."
+        return
+
+    # Set up client to talk to Google.
+    language_code = 'en-US'
+    client = google_speech.SpeechClient()
+    # TODO set sample rate etc based on what we get from AndroidAudio messages.
+    # The audio encoding arg curently specifies raw 16-bit signed LE samples.
+    config = google_types.RecognitionConfig(
+        encoding=google_enums.RecognitionConfig.AudioEncoding.LINEAR16,
+        sample_rate_hertz=sample_rate,
+        language_code=language_code)
+    # TODO add as arg above: speech_context={"phrases": ["words", "here"]}
+    streaming_config = google_types.StreamingRecognitionConfig(
+        config=config, interim_results=True)
+
+    # Start streaming audio to Google.
+    # TODO update stream with buffer coming over ROS...
+    with RosAudioStream() as stream:
+        audio_stream_generator = stream.audio_generator()
+        requests = (google_types.StreamingRecognizeRequest(
+            audio_content=content) for content in audio_stream_generator)
+
+        # Get responses from Google.
+        try:
+            responses = client.streaming_recognize(streaming_config, requests)
+
+            # Use the ASR responses.
+            handle_responses(responses)
+        except:
+            # A request can only have about ~60s of audio in it; after that, we
+            # get an error. So we restart.
+            print "Hit audio limit. Keeping latest result and restarting..."
+            run_asr(sample_rate)
+
 
 def on_asr_command(data):
     """ Receive and process a command message telling this node to start or
@@ -180,22 +228,18 @@ def on_asr_command(data):
 
 def main():
     """ Run Google ASR with the audio over ROS. """
-
     parser = argparse.ArgumentParser(
         description=""" Use the Google Cloud Speech API to get Google ASR
         results for audio streamed over ROS. """)
     parser.add_argument("-r, --sample_rate", type=int, nargs='?',
                         dest="sample_rate", action='store', default=44100,
                         help="""Sample rate at which audio will be streamed.
-                        Defaults to 16000.""")
-    parser.add_argument("-b, --buffer_size", type=int, nargs='?',
-                        dest="buffer_size", action='store', default=4400,
-                        help="""Buffer size (also called chunk size) for audio
-                        being collected. Defaults to 1600 (i.e., one tenth of
-                        the default sample rate, or 100ms).""")
+                        Defaults to 44100.""")
     # Get arguments.
     args = parser.parse_args()
     print "Got arguments: {}".format(args)
+    global sample_rate
+    sample_rate = args.sample_rate
 
     # ROS node setup:
     # TODO If running on a network where DNS does not resolve local hostnames,
@@ -213,16 +257,13 @@ def main():
     sub_asr_command = rospy.Subscriber('asr_command', AsrCommand,
                                        on_asr_command)
 
-    # Start streaming audio to Google.
-    # TODO update stream with buffer coming over ROS...
-    with RosAudioStream(args.sample_rate, args.buffer_size) as stream:
-        audio_stream_generator = stream.audio_generator()
-        requests = (google_types.StreamingRecognizeRequest(
-            audio_content=content) for content in audio_stream_generator)
-
-        # Get responses from Google.
-        responses = client.streaming_recognize(streaming_config, requests)
-        print "*****"
+    # Only start ASR when we receive a start message and start getting audio.
+    # We have to wait to get audio so we know what audio stream parameters to
+    # use (we can assume, e.g., that the sample rate will be 44100 but we could
+    # be wrong).
+    # TODO do this later
+    #global need_to_start
+    #need_to_start = True
 
     # Set up reasonable defaults for now.
     global publish_interim
