@@ -49,6 +49,7 @@ add_message_files(
    FILES
    AsrResult.msg
    AsrState.msg
+   AsrCommand.msg
 )
 
 ## Generate services in the 'srv' folder

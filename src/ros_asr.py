@@ -35,7 +35,7 @@ import rospy  # Get audio data over ROS and publish results.
 from r1d1_msgs.msg import AndroidAudio
 from std_msgs.msg import Header
 from asr_google_cloud.msg import AsrResult
-import binascii
+from asr_google_cloud.msg import AsrCommand
 import struct
 
 
@@ -124,16 +124,58 @@ def handle_responses(responses):
             print "no responses"
             continue
         print response
-        # Send top result over ROS.
-        if response.results[0].is_final:
-            msg = AsrResult()
-            msg.header = Header()
-            msg.header.stamp = rospy.Time.now()
-            msg.transcription = str(response.results[0].alternatives[0].transcript)
+        # Send results over ROS.
+        msg = AsrResult()
+        msg.header = Header()
+        msg.header.stamp = rospy.Time.now()
+        # TODO publish_final, publish_interim, publish_alternatives
+        # If we should publish final results...
+        if publish_final and response.results[0].is_final:
+            # TODO publish alternatives
+            if publish_alternatives:
+                print "TODO publish alternatives"
+            msg.transcription = str(response.results[0].alternatives[0].
+                                    transcript)
             msg.confidence = response.results[0].alternatives[0].confidence
             global pub_asr_result
             pub_asr_result.publish(msg)
-    print "..."
+
+def on_asr_command(data):
+    """ Receive and process a command message telling this node to start or
+    stop streaming audio to Google.
+    """
+    print "Received ASR command: {}".format(data.command)
+    global publish_final, publish_interim, publish_alternatives
+    # Should we stop streaming data to Google for processing or stop sending
+    # any kind of results back? If no results streaming is enabled, we won't
+    # send anything to Google.
+    if (data.command == AsrCommand.STOP_ALL or
+            data.command == AsrCommand.STOP_FINAL):
+        # Stop streaming final results.
+        publish_final = False
+    if (data.command == AsrCommand.STOP_ALL or
+            data.command == AsrCommand.STOP_ALTERNATIVES):
+        # Stop streaming alternative results.
+        publish_alternatives = False
+    if (data.command == AsrCommand.STOP_ALL or
+            data.command == AsrCommand.STOP_INTERIM):
+        # Stop streaming interim results.
+        publish_interim = False
+
+    # Or should we start streaming data to Google for processing or start
+    # sending a particular kind of results?
+    if (data.command == AsrCommand.START_ALL or
+            data.command == AsrCommand.START_FINAL):
+        # Start streaming final results.
+        publish_final = True
+    if (data.command == AsrCommand.START_ALL or
+            data.command == AsrCommand.START_ALTERNATIVES):
+        # Start streaming alternative results.
+        publish_alternatives = True
+    if (data.command == AsrCommand.START_ALL or
+            data.command == AsrCommand.START_INTERIM):
+        # Start streaming interim results.
+        publish_interim = True
 
 
 def main():
@@ -166,18 +208,10 @@ def main():
     global pub_asr_result
     pub_asr_result = rospy.Publisher('asr_result', AsrResult, queue_size=10)
 
-    # Set up client to talk to Google.
-    language_code = 'en-US'
-    client = google_speech.SpeechClient()
-    # TODO set sample rate etc based on what we get from AndroidAudio messages.
-    # The audio encoding arg curently specifies raw 16-bit signed LE samples.
-    config = google_types.RecognitionConfig(
-        encoding=google_enums.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=args.sample_rate,
-        language_code=language_code)
-    # TODO add as arg above: speech_context={"phrases": ["words", "here"]}
-    streaming_config = google_types.StreamingRecognitionConfig(
-        config=config, interim_results=True)
+    # Subscribe to basic commands to tell this node to start or stop processing
+    # audio and streaming to Google, as well as what results to publish.
+    sub_asr_command = rospy.Subscriber('asr_command', AsrCommand,
+                                       on_asr_command)
 
     # Start streaming audio to Google.
     # TODO update stream with buffer coming over ROS...
@@ -190,8 +224,14 @@ def main():
         responses = client.streaming_recognize(streaming_config, requests)
         print "*****"
 
-        # Use the ASR responses.
-        handle_responses(responses)
+    # Set up reasonable defaults for now.
+    global publish_interim
+    publish_interim = False
+    global publish_alternatives
+    publish_alternatives = False
+    global publish_final
+    publish_final = True
+    run_asr(sample_rate)
 
     try:
         rospy.spin()
