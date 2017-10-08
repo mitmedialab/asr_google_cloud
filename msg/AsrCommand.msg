@@ -5,7 +5,7 @@
 Header header
 
 # Command. Use the constants defined below.
-string command
+int8 command
 
 # Commands. The ASR node can publish results (transcript plus confidence value)
 # for three kinds of things:
