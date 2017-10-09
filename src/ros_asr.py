@@ -294,14 +294,6 @@ def main():
     send_data = False
     run_asr(sample_rate)
 
-"""
-    try:
-        rospy.spin()
-    except KeyboardInterrupt:
-        print "Shutting down"
-        """
-
-
 def signal_handler(sig, frame):
     """ Handle signals caught. """
     if sig == signal.SIGINT:
