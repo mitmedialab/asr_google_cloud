@@ -38,6 +38,7 @@ from asr_google_cloud.msg import AsrResult
 from asr_google_cloud.msg import AsrCommand
 import struct
 import signal  # Catching SIGINT signal.
+import time  # For sleep.
 
 
 class RosAudioStream(object):
@@ -98,6 +99,10 @@ class RosAudioStream(object):
                 except queue.Empty:
                     break
 
+            # If we shouldn't send data to Google, just return. This is after
+            # the buffer has been emptied.
+            if not send_data:
+                return
             # Return all the audio data collected so far as a byte array.
             yield b"".join(data)
 
@@ -124,7 +129,6 @@ def handle_responses(responses):
         if not response.results:
             print "no responses"
             continue
-        print response
         # Send results over ROS.
         msg = AsrResult()
         msg.header = Header()
@@ -132,6 +136,7 @@ def handle_responses(responses):
         # TODO publish_final, publish_interim, publish_alternatives
         # If we should publish final results...
         if publish_final and response.results[0].is_final:
+            print "Got final result:\n{}".format(response)
             # TODO publish alternatives
             if publish_alternatives:
                 print "TODO publish alternatives"
@@ -139,8 +144,9 @@ def handle_responses(responses):
                                     transcript)
             msg.confidence = response.results[0].alternatives[0].confidence
             pub_asr_result.publish(msg)
+            print "*** SENT RESULT ***"
             # Restart streaming to Google so we don't hit the audio limit.
-            run_asr(sample_rate)
+            return
         # If we should publish interim results...
         elif publish_interim:
             # TODO
@@ -149,44 +155,44 @@ def handle_responses(responses):
 
 def run_asr(sample_rate):
     """ Stream audio to Google and get results back. """
-    # If no results streaming is enabled, don't bother streaming audio to
-    # Google for processing.
-    if not publish_final and not publish_interim and not publish_alternatives:
-        print "You didn't tell us to publish any results (final, interim, or \
-            alternatives), so we're not streaming audio to Google..."
-        return
+    while True:
+        # If no results streaming is enabled, don't bother streaming audio to
+        # Google for processing.
+        while not send_data:
+            time.sleep(0.05)
 
-    # Set up client to talk to Google.
-    language_code = 'en-US'
-    client = google_speech.SpeechClient()
-    # TODO set sample rate etc based on what we get from AndroidAudio messages.
-    # The audio encoding arg curently specifies raw 16-bit signed LE samples.
-    config = google_types.RecognitionConfig(
-        encoding=google_enums.RecognitionConfig.AudioEncoding.LINEAR16,
-        sample_rate_hertz=sample_rate,
-        language_code=language_code)
-    # TODO add as arg above: speech_context={"phrases": ["words", "here"]}
-    streaming_config = google_types.StreamingRecognitionConfig(
-        config=config, interim_results=True)
+        # Set up client to talk to Google.
+        language_code = 'en-US'
+        client = google_speech.SpeechClient()
+        # TODO set sample rate etc from AndroidAudio messages.
+        # Audio encoding arg curently specifies raw 16-bit signed LE samples.
+        config = google_types.RecognitionConfig(
+            encoding=google_enums.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz=sample_rate,
+            language_code=language_code)
+        # TODO add as arg above: speech_context={"phrases": ["words", "here"]}
+        streaming_config = google_types.StreamingRecognitionConfig(
+            config=config, interim_results=True)
 
-    # Start streaming audio to Google.
-    # TODO update stream with buffer coming over ROS...
-    with RosAudioStream() as stream:
-        audio_stream_generator = stream.audio_generator()
-        requests = (google_types.StreamingRecognizeRequest(
-            audio_content=content) for content in audio_stream_generator)
+        # Start streaming audio to Google.
+        # TODO update stream with buffer coming over ROS...
+        with RosAudioStream() as stream:
+            audio_stream_generator = stream.audio_generator()
+            requests = (google_types.StreamingRecognizeRequest(
+                audio_content=content) for content in audio_stream_generator)
 
-        # Get responses from Google.
-        try:
-            responses = client.streaming_recognize(streaming_config, requests)
+            # Get responses from Google.
+            try:
+                responses = client.streaming_recognize(streaming_config,
+                                                       requests)
 
-            # Use the ASR responses.
-            handle_responses(responses)
-        except:
-            # A request can only have about ~60s of audio in it; after that, we
-            # get an error. So we restart.
-            print "Hit audio limit. Keeping latest result and restarting..."
-            run_asr(sample_rate)
+                # Use the ASR responses.
+                handle_responses(responses)
+            except:
+                # A request can only have about ~60s of audio in it; after
+                # that, we get an error. So we restart.
+                print "Hit audio limit. Restarting..."
+                continue
 
 
 def on_asr_command(data):
@@ -194,6 +200,7 @@ def on_asr_command(data):
     stop streaming audio to Google.
     """
     print "Received ASR command: {}".format(data.command)
+    print "ASR COMMAND RECEIVED **********************"
     global publish_final, publish_interim, publish_alternatives
     # Should we stop streaming data to Google for processing or stop sending
     # any kind of results back? If no results streaming is enabled, we won't
@@ -226,6 +233,13 @@ def on_asr_command(data):
         # Start streaming interim results.
         publish_interim = True
 
+    # If we should now be publishing results, start ASR.
+    if publish_final or publish_alternatives or publish_interim:
+        global send_data
+        send_data = True
+    else:
+        global send_data
+        send_data = False
 
 def main():
     """ Run Google ASR with the audio over ROS. """
