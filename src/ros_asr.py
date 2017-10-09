@@ -37,6 +37,7 @@ from std_msgs.msg import Header
 from asr_google_cloud.msg import AsrResult
 from asr_google_cloud.msg import AsrCommand
 import struct
+import signal  # Catching SIGINT signal.
 
 
 class RosAudioStream(object):
@@ -265,20 +266,33 @@ def main():
     #global need_to_start
     #need_to_start = True
 
+    # Set up signal handler to catch SIGINT (e.g., ctrl-c).
+    signal.signal(signal.SIGINT, signal_handler)
+
     # Set up reasonable defaults for now.
     global publish_interim
     publish_interim = False
     global publish_alternatives
     publish_alternatives = False
     global publish_final
-    publish_final = True
+    publish_final = False
+    global send_data
+    send_data = False
     run_asr(sample_rate)
 
+"""
     try:
         rospy.spin()
     except KeyboardInterrupt:
         print "Shutting down"
+        """
 
+
+def signal_handler(sig, frame):
+    """ Handle signals caught. """
+    if sig == signal.SIGINT:
+        print("Got keyboard interrupt! Exiting.")
+        exit("Interrupted by user.")
 
 if __name__ == '__main__':
     main()
