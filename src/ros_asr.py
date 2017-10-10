@@ -188,6 +188,8 @@ def run_asr(sample_rate):
 
                 # Use the ASR responses.
                 handle_responses(responses)
+            except SystemExit:
+                raise
             except:
                 # A request can only have about ~60s of audio in it; after
                 # that, we get an error. So we restart.
