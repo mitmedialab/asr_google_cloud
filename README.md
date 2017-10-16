@@ -95,41 +95,19 @@ Version 170.0.1 was used for development
 
 ## Usage
 
+To continuously transcribe audio from r1d1_action (e.g., Tega App) from an Android device and get ASR results back,
+run:
+
+```sh
+$ pipenv run python ros_asr.py
+```
+
 To stream audio from your local microphone to Google and get ASR results back,
 run:
 
 ```sh
 $ pipenv run python local_mic_asr.py
 ```
-
-### Version 1.0.0 run instructions
-
-Both scripts will run in a continuous loop, printing the data and metadata
-received from the Speech API, which includes alternative transcriptions of what
-it hears, and a confidence score.
-
-Note that the scripts do not yet support python 3, as the upstream `grpcio`
-library's support is [not yet
-complete](https://github.com/grpc/grpc/issues/282).
-
-* To run `node_pyaudio_google_asr.py`:
-
-```sh
-$ python node_pyaudio_google_asr.py
-```
-
-This code listens to your computer's microphone input and publishes ASR result
-to `/asr_result` .
-
-* To run `node_google_asr.py`:
-
-```sh
-$ python node_google_asr.py
-```
-This code subscribes to `/android_audio` (or any other source) and publishes
-ASR result to `/asr_result`.  Use this code with
-[Android_microphone_ROS](https://github.com/mitmedialab/android_microphone_ros).
-
 
 ## Further reading
 
