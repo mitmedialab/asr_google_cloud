@@ -23,6 +23,8 @@ import sys
 import threading
 import time
 import binascii
+import httplib2
+import oauth2client
 
 from google.cloud import credentials
 from google.cloud.speech.v1beta1 import cloud_speech_pb2 as cloud_speech
@@ -34,6 +36,8 @@ from six.moves import queue
 
 import rospy
 from std_msgs.msg import String
+from r1d1_msgs.msg import AndroidAudio
+from asr_google_cloud.msg import AsrResult
 
 # Audio recording parameters
 RATE = 16000
@@ -50,11 +54,45 @@ SPEECH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 CONTINUOUS_REQUEST = True
 
 init_time = 0
-node = rospy.init_node('google_asr', anonymous = False)
-pub_asr_result = rospy.Publisher('asr_result', String, queue_size = 10)
+pub_asr_result = rospy.Publisher('asr_result', AsrResult, queue_size = 10)
+pub_audio_request = rospy.Publisher('audio_request', String, queue_size = 10)
+sub_asr_start = ''
+is_publish = True
+publish_alternatives = False
+publish_interim = False
 
-#sub_asr_request = rospy.Subscriber('asr_request', String, onNewAsrRequest)
-sub_audio = ''
+def onNewAsrStart(data):
+    global is_publish, publish_alternatives, publish_interim
+    print data.data
+
+    if "stop" in data.data:
+        is_publish = False
+        msg = AsrResult()
+        msg.header.stamp = rospy.Time.now()
+        msg.transcription = "df#$%sdfg#12"
+        msg.confidence = 100.0
+        pub_asr_result.publish(msg)
+
+        # stop:interim:alternative
+        if "interim" in data.data:
+            print "stop interim"
+            publish_interim = False
+
+        if "alternative" in data.data:
+            print "stop alternatives"
+            publish_alternatives = False
+
+    elif "start" in data.data:
+        is_publish = True
+
+        # start:interim:alternative
+        if "interim" in data.data:
+            print "start interim"
+            publish_interim = True
+
+        if "alternative" in data.data:
+            print "start alternatives"
+            publish_alternatives = True
 
 
 def make_channel(host, port):
@@ -89,11 +127,6 @@ def _audio_data_generator(buff):
         The function will block until at least one data chunk is available.
     """
     while True:
-
-        if (time.time() - init_time) > 0.9 * DEADLINE:
-            print("Restarting before time out")
-            break
-
         # Use a blocking get() to ensure there's at least one chunk of data
         chunk = buff.get()
         if not chunk:
@@ -115,29 +148,20 @@ def _fill_buffer(audio_stream, args):
     """Continuously collect data from the audio stream, into the buffer."""
 
     buff = args
-
-    if buff.full():
-        buff.queue.clear()
-
     buff.put(binascii.unhexlify(audio_stream.data))
-
-    #print "buffer size: %s" % buff.qsize()
-
 
 # [START audio_stream]
 @contextlib.contextmanager
 def record_audio(rate):
-    global sub_audio
     """Opens a recording stream in a context manager."""
     # Create a thread-safe buffer of audio data
-    buff = queue.Queue(maxsize=10)
-    buff.queue.clear()
+    buff = queue.Queue()
 
-    # Spin up a separate thread to buffer audio data from the microphone
+    # Spin up a separate thread to buffer audio data from the android microphone
     # This is necessary so that the input device's buffer doesn't overflow
     # while the calling thread makes network requests, etc.
-    print "starting transcription"
-    sub_audio = rospy.Subscriber('android_audio', String, _fill_buffer, buff)
+
+    sub_audio = rospy.Subscriber('android_audio', AndroidAudio, _fill_buffer, buff)
 
     yield _audio_data_generator(buff)
 
@@ -161,7 +185,9 @@ def request_stream(data_stream, rate, interim_results=True):
         # See http://g.co/cloud/speech/docs/languages
         # for a list of supported languages.
         language_code='en-US',  # a BCP-47 language tag
-        speech_context={"phrases":["Tega", "Huawei", "Haewon", "demo", "Ishaan", "Mirko", "Sooyoung", "Jinjoo", "Hooli", "tree", "turtle", "yeah", "yup","sure"]},
+        #speech_context={"phrases":["Tega", "Huawei", "Haewon", "demo", "Ishaan", "Mirko", "Sooyoung", "Jinjoo", "Hooli", "tree", "turtle", "yeah", "yup"]},
+        speech_context={"phrases":["the end", "Tyga", "the end Tyga", "Tyga the end", "that's the end of the story", "Tyga that's the end of the story"]},
+        max_alternatives=4
     )
     streaming_config = cloud_speech.StreamingRecognitionConfig(
         interim_results=interim_results,
@@ -173,6 +199,9 @@ def request_stream(data_stream, rate, interim_results=True):
 
     for data in data_stream:
 
+        if (time.time() - init_time) > 0.9*DEADLINE:
+            print("Restarting before time out")
+            break
         #else:
         #    print(time.time() - init_time)
         # Subsequent requests can all just have the content
@@ -181,30 +210,30 @@ def request_stream(data_stream, rate, interim_results=True):
 
 def listen_print_loop(recognize_stream):
     num_chars_printed = 0
+    for resp in recognize_stream:
+        if resp.error.code != code_pb2.OK:
+            raise RuntimeError('Server error: ' + resp.error.message)
+            break
 
-    try:
-        for resp in recognize_stream:
+        if not is_publish:
+            print('Exiting..')
+            break
 
-            if resp.error.code != code_pb2.OK:
-                print RuntimeError('Restarting from server error: ' + resp.error.message)
-                break
+        if not resp.results:
+            continue
 
+        # Display the transcriptions & their alternatives
+        #for result in resp.results:
+        #    print(result.alternatives)
+        
+        # Display the top transcription
+        result = resp.results[0]
+        transcript = result.alternatives[0].transcript
 
-
-            if not resp.results:
-                continue
-
-            # Display the transcriptions & their alternatives
-            #for result in resp.results:
-            #    print(result.alternatives)
-
-            # Display the top transcription
-            result = resp.results[0]
-            transcript = result.alternatives[0].transcript
-
-            # Display interim results, but with a carriage return at the end of the
-            # line, so subsequent lines will overwrite them.
-            if not result.is_final:
+        # Display interim results, but with a carriage return at the end of the
+        # line, so subsequent lines will overwrite them.
+        if not result.is_final:
+            if publish_interim:
                 # If the previous result was longer than this one, we need to print
                 # some extra spaces to overwrite the previous result
                 overwrite_chars = ' ' * max(0, num_chars_printed - len(transcript))
@@ -213,68 +242,99 @@ def listen_print_loop(recognize_stream):
                 sys.stdout.flush()
                 num_chars_printed = len(transcript)
 
-            else:
-                pub_asr_result.publish(str(result.alternatives[0].transcript))
-                print(transcript)
+                msg = AsrResult()
+                msg.header.stamp = rospy.Time.now()
+                msg.transcription = transcript + overwrite_chars
+                msg.confidence = 0
+                pub_asr_result.publish(msg)
 
-                if (time.time() - init_time) > 0.85*DEADLINE:
-                    print("Restarting at the end of speech")
-                    break
-                #else:
-                #    print(time.time() - init_time)
+        else:
+            msg = AsrResult()
+            msg.header.stamp = rospy.Time.now()
 
-                # Exit recognition if any of the transcribed phrases could be
-                # one of our keywords.
-                #if re.search(r'\b(Tega|taylor|tiger|Taylor)\b', transcript, re.I):
-                #    print('Exiting..')
-                    #break
+            if publish_alternatives:
+                trans_list = []
+                for i in xrange(len(result.alternatives)):
+                    trans_list.append(str(result.alternatives[i].transcript))
+                print trans_list
+                transcript = ': '.join(trans_list)
 
-                num_chars_printed = 0
-    except:
-        print "Restarting from recognize_stream error"
-        return
+            msg.transcription = str(transcript)
+            msg.confidence = result.alternatives[0].confidence
+            pub_asr_result.publish(msg)
 
+            print(transcript)
+            print(result.alternatives[0].confidence)
+        
+            if (time.time() - init_time) > 0.85*DEADLINE:
+                print("Restarting at the end of speech")
+                break
+            #else:
+            #    print(time.time() - init_time)
+
+            # Exit recognition if any of the transcribed phrases could be
+            # one of our keywords.
+            #if re.search(r'\b(Tega|taylor|tiger|Taylor)\b', transcript, re.I):
+            #    print('Exiting..')
+                #break
+
+            num_chars_printed = 0
 
 
 def start():
-    global init_time, is_listen
+    global init_time
 
-    with cloud_speech.beta_create_Speech_stub(
-            make_channel('speech.googleapis.com', 443)) as service:
-        # For streaming audio from the microphone, there are three threads.
-        # First, a thread that collects audio data as it comes in
-        with record_audio(RATE) as buffered_audio_data:
+    try:
+        with cloud_speech.beta_create_Speech_stub(
+                make_channel('speech.googleapis.com', 443)) as service:
+            # For streaming audio from the microphone, there are three threads.
+            # First, a thread that collects audio data as it comes in
+            with record_audio(RATE) as buffered_audio_data:
+                # Second, a thread that sends requests with that data
+                requests = request_stream(buffered_audio_data, RATE)
+                # Third, a thread that listens for transcription responses
+                recognize_stream = service.StreamingRecognize(
+                    requests, DEADLINE_SECS)
 
-            # Second, a thread that sends requests with that data
-            requests = request_stream(buffered_audio_data, RATE)
-            # Third, a thread that listens for transcription responses
-            recognize_stream = service.StreamingRecognize(
-                requests, DEADLINE_SECS)
+                init_time = time.time()
 
-            init_time = time.time()
+                # Exit things cleanly on interrupt
+                signal.signal(signal.SIGINT, lambda *_: recognize_stream.cancel())
 
-            # Exit things cleanly on interrupt
-            signal.signal(signal.SIGINT, lambda *_: recognize_stream.cancel())
+                # Now, put the transcription responses to use.
+                try:
+                    listen_print_loop(recognize_stream)
 
-            # Now, put the transcription responses to use.
-            try:
-                listen_print_loop(recognize_stream)
-                recognize_stream.cancel()
-                sub_audio.unregister()
+                    recognize_stream.cancel()
 
-                if CONTINUOUS_REQUEST:
-                    # respun
-                    start()
-            except face.CancellationError:
-                # This happens because of the interrupt handler
-                print "face CancellationError"
-                #pass
+                    while not is_publish:
+                        time.sleep(0.5)
 
-
-
+                    if CONTINUOUS_REQUEST:
+                        #respun
+                        start()
+                except face.CancellationError as e:
+                    print "\n{0}\n".format(e)
+                    # This happens because of the interrupt handler
+                    pass
+    except httplib2.ServerNotFoundError as e:
+        sys.stdout.write("\033[1;31m")
+        print "\nServer unreachable: {0}\n".format(e)
+        exit()
+    except oauth2client.client.ApplicationDefaultCredentialsError as e:
+        sys.stdout.write("\033[1;31m")
+        print "\nCheck credentials: {0}\n".format(e)
+        exit()
+    except Exception as e:
+        print "\n{0}\n".format(e)
+        #time.sleep(1)
+        start()
 
 
 def main():
+    node = rospy.init_node('google_asr')
+    sub_asr_start = rospy.Subscriber('asr_start', String, onNewAsrStart)
+    pub_audio_request.publish("start")
     start()
 
 if __name__ == '__main__':

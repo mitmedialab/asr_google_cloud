@@ -48,7 +48,7 @@ DEADLINE = 60
 DEADLINE_SECS = DEADLINE * 3 + 5
 SPEECH_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 
-CONTINUOUS_REQUEST = True
+CONTINUOUS_REQUEST = False
 
 init_time = 0
 pub_asr_result = rospy.Publisher('asr_result', AsrResult, queue_size = 10)
@@ -117,6 +117,7 @@ def _audio_data_generator(buff):
             except queue.Empty:
                 break
         yield b''.join(data)
+    print "8termination\n"
 
 
 def _fill_buffer(audio_stream, buff, chunk):
@@ -156,10 +157,15 @@ def record_audio(rate, chunk):
 
     yield _audio_data_generator(buff)
 
+
     audio_stream.stop_stream()
+    print "1termination\n"
     audio_stream.close()
-    fill_buffer_thread.join()
+    print "2termination\n"
+    #fill_buffer_thread.join()
+    print "3termination\n"
     audio_interface.terminate()
+    print "4termination\n"
 # [END audio_stream]
 
 
@@ -183,7 +189,8 @@ def request_stream(data_stream, rate, interim_results=True):
         # See http://g.co/cloud/speech/docs/languages
         # for a list of supported languages.
         language_code='en-US',  # a BCP-47 language tag
-        speech_context={"phrases":["tega", "Haewon", "demo", "Ishaan", "Mirko", "Sooyoung", "Jinjoo", "Hooli", "tree", "turtle", "yeah", "yup", "sure"]},
+        speech_context={"phrases":["the end", "Tyga", "the end Tyga", "Tyga the end", "that's the end of the story", "Tyga that's the end of the story"]},
+        max_alternatives=4
     )
     streaming_config = cloud_speech.StreamingRecognitionConfig(
         interim_results=interim_results,
@@ -192,6 +199,7 @@ def request_stream(data_stream, rate, interim_results=True):
 
     yield cloud_speech.StreamingRecognizeRequest(
         streaming_config=streaming_config)
+    print "9termination\n"
 
     for data in data_stream:
         if (time.time() - init_time) > 0.9*DEADLINE:
@@ -201,6 +209,7 @@ def request_stream(data_stream, rate, interim_results=True):
         #    print(time.time() - init_time)
         # Subsequent requests can all just have the content
         yield cloud_speech.StreamingRecognizeRequest(audio_content=data)
+    print "5termination\n"
 
 
 def listen_print_loop(recognize_stream):
@@ -230,10 +239,16 @@ def listen_print_loop(recognize_stream):
         if not result.is_final:
             # If the previous result was longer than this one, we need to print
             # some extra spaces to overwrite the previous result
-            #overwrite_chars = ' ' * max(0, num_chars_printed - len(transcript))
+            overwrite_chars = ' ' * max(0, num_chars_printed - len(transcript))
 
-            #sys.stdout.write(transcript + overwrite_chars + '\r')
-            #sys.stdout.flush()
+            sys.stdout.write(transcript + overwrite_chars + '\r')
+            sys.stdout.flush()
+
+            msg = AsrResult()
+            msg.header.stamp = rospy.Time.now()
+            msg.transcription = transcript + overwrite_chars
+            msg.confidence = 0
+            pub_asr_result.publish(msg)
 
             num_chars_printed = len(transcript)
 
@@ -245,6 +260,10 @@ def listen_print_loop(recognize_stream):
             pub_asr_result.publish(msg)
 
             print(transcript)
+            for x in range(len(result.alternatives)):
+                print x
+                print(result.alternatives[x].transcript)
+                print(result.alternatives[x].confidence)
             print(result.alternatives[0].confidence)
 
             if (time.time() - init_time) > 0.85*DEADLINE:
@@ -260,6 +279,7 @@ def listen_print_loop(recognize_stream):
             #    break
 
             num_chars_printed = 0
+    print "6termination\n"
 
 
 def start():
@@ -297,6 +317,7 @@ def start():
                         start()
                 except face.CancellationError:
                     # This happens because of the interrupt handler
+    		    print "7termination\n"
                     pass
     except:
             start()
@@ -311,7 +332,13 @@ def main():
     sub_asr_start = rospy.Subscriber('asr_start', String, onNewAsrStart)
     start()
 
-    rospy.spin()
+    try:
+        rospy.spin()
+    except KeyboardInterrupt:
+        sys.stdout.write("Shutting down GOOGLE_ASR node")
+  
+    sys.stdout.write(">>Shutting down ROS GOOGLE_ASR node\n")
+
 
 if __name__ == '__main__':
     main()
