@@ -125,32 +125,37 @@ class RosAudioStream(object):
 
 def handle_responses(responses):
     """ Iterate through any responses received. """
+
+    publish_final_tmp = publish_final
+
     for response in responses:
+        
         if not response.results:
-            print "no responses"
+            print("no responses")
             continue
         # Send results over ROS.
         msg = AsrResult()
         msg.header = Header()
         msg.header.stamp = rospy.Time.now()
         # TODO publish_final, publish_interim, publish_alternatives
-        # If we should publish final results...
-        if publish_final and response.results[0].is_final:
-            print "Got final result:\n{}".format(response)
+        # If we should publish final results..
+        
+        if publish_final_tmp and response.results[0].is_final:
+            print("Got final result:\n{}".format(response))
             # TODO publish alternatives
             if publish_alternatives:
-                print "TODO publish alternatives"
+                print("TODO publish alternatives")
             msg.transcription = str(response.results[0].alternatives[0].
                                     transcript)
             msg.confidence = response.results[0].alternatives[0].confidence
             pub_asr_result.publish(msg)
-            print "*** SENT RESULT ***"
+            print("*** SENT RESULT ***")
             # Restart streaming to Google so we don't hit the audio limit.
             return
         # If we should publish interim results...
         elif publish_interim:
             # TODO
-            print "TODO publish interim results"
+            print("TODO publish interim results")
 
 
 def run_asr(sample_rate):
@@ -193,7 +198,7 @@ def run_asr(sample_rate):
             except:
                 # A request can only have about ~60s of audio in it; after
                 # that, we get an error. So we restart.
-                print "Hit audio limit. Restarting..."
+                print("Hit audio limit. Restarting...")
                 continue
 
 
@@ -201,8 +206,8 @@ def on_asr_command(data):
     """ Receive and process a command message telling this node to start or
     stop streaming audio to Google.
     """
-    print "Received ASR command: {}".format(data.command)
-    print "ASR COMMAND RECEIVED **********************"
+    print("Received ASR command: {}".format(data.command))
+    print("ASR COMMAND RECEIVED **********************")
     global publish_final, publish_interim, publish_alternatives
     # Should we stop streaming data to Google for processing or stop sending
     # any kind of results back? If no results streaming is enabled, we won't
@@ -254,7 +259,7 @@ def main():
                         Defaults to 44100.""")
     # Get arguments.
     args = parser.parse_args()
-    print "Got arguments: {}".format(args)
+    print("Got arguments: {}".format(args))
     global sample_rate
     sample_rate = args.sample_rate
 
