@@ -127,9 +127,12 @@ def handle_responses(responses):
     """ Iterate through any responses received. """
 
     publish_final_tmp = publish_final
+    print("handle responses start....")
+    is_final = False
 
     for response in responses:
-        
+        print("response")
+        print(response)
         if not response.results:
             print("no responses")
             continue
@@ -139,8 +142,11 @@ def handle_responses(responses):
         msg.header.stamp = rospy.Time.now()
         # TODO publish_final, publish_interim, publish_alternatives
         # If we should publish final results..
+
+       
         
         if publish_final_tmp and response.results[0].is_final:
+            is_final = True
             print("Got final result:\n{}".format(response))
             # TODO publish alternatives
             if publish_alternatives:
@@ -156,6 +162,20 @@ def handle_responses(responses):
         elif publish_interim:
             # TODO
             print("TODO publish interim results")
+
+    # if we cannot find a response with is_final == true, then output whatever ASR captures to ROS
+    if is_final == False:
+        msg = AsrResult()
+        msg.header = Header()
+        msg.header.stamp = rospy.Time.now()
+
+        transcription = ' '.join([ str(i[0].results[0].alternatives[0].
+                                    transcript) for i in response])
+        msg.transcription = str(response[0].results[0].alternatives[0].
+                                    transcript)
+        msg.confidence = 0.0
+        pub_asr_result.publish(msg)
+
 
 
 def run_asr(sample_rate):
@@ -188,19 +208,22 @@ def run_asr(sample_rate):
 
             # Get responses from Google.
             try:
+                print("get client streaming recognize")
                 responses = client.streaming_recognize(streaming_config,
                                                        requests)
-
+                print("before handle response")
                 # Use the ASR responses.
                 handle_responses(responses)
+                print("after handle response")
             except SystemExit:
+                print("system exit ....")
                 raise
             except:
                 # A request can only have about ~60s of audio in it; after
                 # that, we get an error. So we restart.
                 print("Hit audio limit. Restarting...")
                 continue
-
+    print("afte while loop")
 
 def on_asr_command(data):
     """ Receive and process a command message telling this node to start or
@@ -276,6 +299,7 @@ def main():
 
     # Subscribe to basic commands to tell this node to start or stop processing
     # audio and streaming to Google, as well as what results to publish.
+    global sub_asr_command
     sub_asr_command = rospy.Subscriber('asr_command', AsrCommand,
                                        on_asr_command)
 
@@ -303,9 +327,14 @@ def main():
 
 def signal_handler(sig, frame):
     """ Handle signals caught. """
+    
     if sig == signal.SIGINT:
+        pub_asr_result.unregister()
+        sub_asr_command.unregister()
         print("Got keyboard interrupt! Exiting.")
         exit("Interrupted by user.")
+
+
 
 if __name__ == '__main__':
     main()
