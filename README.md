@@ -95,12 +95,15 @@ Version 170.0.1 was used for development
 
 ## Usage
 
-To continuously transcribe audio from r1d1_action (e.g., Tega App) from an Android device and get ASR results back,
-run:
+To continuously transcribe audio from r1d1\_action (e.g., from Tega App) from
+an Android device using AndroidAudio messages, and get ASR results back, run:
 
 ```sh
 $ pipenv run python ros_asr.py
 ```
+To run the `src/ros_asr.py` script from anywhere, you can use the
+`run_ros_asr.sh` script. You may need to modify the script to use the filepath
+to wherever you checked out this repository.
 
 To stream audio from your local microphone to Google and get ASR results back,
 run:
