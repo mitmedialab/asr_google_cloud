@@ -58,6 +58,12 @@ The dependencies are listed in the `Pipfile`:
       page](https://people.csail.mit.edu/hubert/pyaudio/#downloads).
     - MIT license
 
+**If you are going to use the Pipfile.lock to install stuff, note that there
+are now two pip lock files.** One of them has "-py3" appended to it and the
+other has "-py27" appended to it. This is because the lock file has different
+stuff in it depending on which version of python you are using! Use whichever
+is appropriate for your use case.
+
 In addition, these scripts were developed and tested with:
 
 - Python 2.7.6
