@@ -57,8 +57,8 @@ class RosAudioStream(object):
         # callback.
         # Use r1d1_msgs/AndroidAudio to get incoming audio stream from the
         # robot's microphone or a standalone android microphone app.
-        sub_audio = rospy.Subscriber('android_audio', AndroidAudio,
-                                     self.on_android_audio_msg)
+        rospy.Subscriber('android_audio', AndroidAudio,
+                         self.on_android_audio_msg)
         # The stream is now open. # TODO is it open now or at rospy.spin?
         self.closed = False
         return self
@@ -125,26 +125,18 @@ class RosAudioStream(object):
 
 def handle_responses(responses):
     """ Iterate through any responses received. """
-
     publish_final_tmp = publish_final
-    print("handle responses start....")
     is_final = False
-
     for response in responses:
-        print("response")
-        print(response)
         if not response.results:
-            print("no responses")
             continue
         # Send results over ROS.
         msg = AsrResult()
         msg.header = Header()
         msg.header.stamp = rospy.Time.now()
         # TODO publish_final, publish_interim, publish_alternatives
-        # If we should publish final results..
 
-       
-        
+        # If we should publish final results..
         if publish_final_tmp and response.results[0].is_final:
             is_final = True
             print("Got final result:\n{}".format(response))
@@ -163,19 +155,19 @@ def handle_responses(responses):
             # TODO
             print("TODO publish interim results")
 
-    # if we cannot find a response with is_final == true, then output whatever ASR captures to ROS
-    if is_final == False:
-        msg = AsrResult()
-        msg.header = Header()
-        msg.header.stamp = rospy.Time.now()
-
-        transcription = ' '.join([ str(i[0].results[0].alternatives[0].
-                                    transcript) for i in response])
-        msg.transcription = str(response[0].results[0].alternatives[0].
+    # If we cannot find a response with is_final == true, then output whatever
+    # ASR captures to ROS.
+    if not is_final:
+        try:
+            msg = AsrResult()
+            msg.header = Header()
+            msg.header.stamp = rospy.Time.now()
+            msg.transcription = str(response[0].results[0].alternatives[0].
                                     transcript)
-        msg.confidence = 0.0
-        pub_asr_result.publish(msg)
-
+            msg.confidence = 0.0
+            pub_asr_result.publish(msg)
+        except Exception as exc:
+            print("Not final result; couldn't output anything: {}".format(exc))
 
 
 def run_asr(sample_rate):
@@ -208,22 +200,18 @@ def run_asr(sample_rate):
 
             # Get responses from Google.
             try:
-                print("get client streaming recognize")
                 responses = client.streaming_recognize(streaming_config,
                                                        requests)
-                print("before handle response")
                 # Use the ASR responses.
                 handle_responses(responses)
-                print("after handle response")
             except SystemExit:
-                print("system exit ....")
                 raise
             except:
                 # A request can only have about ~60s of audio in it; after
                 # that, we get an error. So we restart.
                 print("Hit audio limit. Restarting...")
                 continue
-    print("afte while loop")
+
 
 def on_asr_command(data):
     """ Receive and process a command message telling this node to start or
@@ -231,7 +219,7 @@ def on_asr_command(data):
     """
     print("Received ASR command: {}".format(data.command))
     print("ASR COMMAND RECEIVED **********************")
-    global publish_final, publish_interim, publish_alternatives
+    global publish_final, publish_interim, publish_alternatives, send_data
     # Should we stop streaming data to Google for processing or stop sending
     # any kind of results back? If no results streaming is enabled, we won't
     # send anything to Google.
@@ -265,11 +253,10 @@ def on_asr_command(data):
 
     # If we should now be publishing results, start ASR.
     if publish_final or publish_alternatives or publish_interim:
-        global send_data
         send_data = True
     else:
-        global send_data
         send_data = False
+
 
 def main():
     """ Run Google ASR with the audio over ROS. """
@@ -291,7 +278,7 @@ def main():
     # get the public IP address of this machine and export to the environment
     # variable $ROS_IP to set the public address of this node, so the user
     # doesn't have to remember to do this before starting the node.
-    ros_node = rospy.init_node('google_asr_node', anonymous=False)
+    rospy.init_node('google_asr_node', anonymous=False)
 
     # Publish ASR results as asr_google_cloud/AsrResult messages.
     global pub_asr_result
