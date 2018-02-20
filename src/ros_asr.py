@@ -50,6 +50,8 @@ class RosAudioStream(object):
         self._buffer = queue.Queue()
         # The audio stream starts out closed.
         self.closed = True
+        # We will collect audio data over ROS.
+        self._sub_audio = None
 
     def __enter__(self):
         """ Set up the audio stream. """
@@ -57,8 +59,8 @@ class RosAudioStream(object):
         # callback.
         # Use r1d1_msgs/AndroidAudio to get incoming audio stream from the
         # robot's microphone or a standalone android microphone app.
-        rospy.Subscriber('android_audio', AndroidAudio,
-                         self.on_android_audio_msg)
+        self._sub_audio = rospy.Subscriber('android_audio', AndroidAudio,
+                                           self.on_android_audio_msg)
         # The stream is now open. # TODO is it open now or at rospy.spin?
         self.closed = False
         return self
@@ -69,6 +71,8 @@ class RosAudioStream(object):
         self.closed = True
         # Tell the generator to terminate by adding None to the buffer.
         self._buffer.put(None)
+        # Unsubscribe from the AndroidAudio messages.
+        self._sub_audio.unregister()
 
     def audio_generator(self):
         """ Get data from the buffer when requested. """
