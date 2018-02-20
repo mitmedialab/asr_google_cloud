@@ -160,18 +160,18 @@ def handle_responses(responses):
             print("TODO publish interim results")
 
     # If we cannot find a response with is_final == true, then output whatever
-    # ASR captures to ROS.
-    if not is_final:
-        try:
-            msg = AsrResult()
-            msg.header = Header()
-            msg.header.stamp = rospy.Time.now()
-            msg.transcription = str(response[0].results[0].alternatives[0].
-                                    transcript)
-            msg.confidence = 0.0
-            pub_asr_result.publish(msg)
-        except Exception as exc:
-            print("Not final result; couldn't output anything: {}".format(exc))
+    # ASR captures to ROS, assuming we got at least one response.
+    if not is_final and len(responses) > 0:
+        if not responses[0].results:
+            print("No results! Can't output anything.")
+            return
+        msg = AsrResult()
+        msg.header = Header()
+        msg.header.stamp = rospy.Time.now()
+        msg.transcription = str(responses[0].results[0].alternatives[0].
+                                transcript)
+        msg.confidence = 0.0
+        pub_asr_result.publish(msg)
 
 
 def run_asr(sample_rate):
