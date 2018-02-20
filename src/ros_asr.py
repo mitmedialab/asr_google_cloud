@@ -300,6 +300,7 @@ def main():
 
     # Set up signal handler to catch SIGINT (e.g., ctrl-c).
     signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     # Set up reasonable defaults for now.
     global publish_interim
@@ -312,15 +313,14 @@ def main():
     send_data = False
     run_asr(sample_rate)
 
+
 def signal_handler(sig, frame):
     """ Handle signals caught. """
-    
-    if sig == signal.SIGINT:
+    if sig == signal.SIGINT or sig == signal.SIGTERM:
         pub_asr_result.unregister()
         sub_asr_command.unregister()
-        print("Got keyboard interrupt! Exiting.")
+        print("Told to exit! Exiting.")
         exit("Interrupted by user.")
-
 
 
 if __name__ == '__main__':
