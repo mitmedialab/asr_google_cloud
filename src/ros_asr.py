@@ -141,7 +141,7 @@ def handle_responses(responses):
         # TODO publish_final, publish_interim, publish_alternatives
 
         # If we should publish final results..
-        if publish_final_tmp and response.results[0].is_final:
+        if response.results[0].is_final:
             is_final = True
             print("Got final result:\n{}".format(response))
             # TODO publish alternatives
@@ -210,7 +210,8 @@ def run_asr(sample_rate):
                 handle_responses(responses)
             except SystemExit:
                 raise
-            except:
+            except Exception as e:
+                print e
                 # A request can only have about ~60s of audio in it; after
                 # that, we get an error. So we restart.
                 print("Hit audio limit. Restarting...")
@@ -312,9 +313,9 @@ def main():
     global publish_alternatives
     publish_alternatives = False
     global publish_final
-    publish_final = False
+    publish_final = True
     global send_data
-    send_data = False
+    send_data = True
     run_asr(sample_rate)
 
 
