@@ -1,13 +1,13 @@
 <?xml version="1.0"?>
 <package>
   <name>asr_google_cloud</name>
-  <version>2.0.0</version>
+  <version>3.0.0</version>
   <description>Automatic Speech Recognition (ASR) using Google Cloud API</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag -->
   <!-- Example:  -->
   <!-- <maintainer email="jane.doe@example.com">Jane Doe</maintainer> -->
-  <maintainer email="haewon@todo.todo">haewon</maintainer>
+  <maintainer email="haewon@mit.edu">haewon</maintainer>
 
 
   <!-- One license tag required, multiple allowed, one license per tag -->

@@ -53,6 +53,7 @@ import rospy  # Get audio data over ROS and publish results.
 from std_msgs.msg import Header
 from asr_google_cloud.msg import AsrResult
 from asr_google_cloud.msg import AsrCommand
+from asr_google_cloud.msg import Words
 
 # Audio recording parameters
 STREAMING_LIMIT = 55000
@@ -204,13 +205,24 @@ def listen_print_loop(responses, stream):
         else:
             print(transcript + overwrite_chars)
 
-            #print("Got final result:\n{}".format(response))
+            # print("Got final result:\n{}".format(response))
             # TODO publish alternatives
             if publish_alternatives:
                 print("TODO publish alternatives")
             msg.transcription = str(response.results[0].alternatives[0].
                                     transcript)
             msg.confidence = response.results[0].alternatives[0].confidence
+
+            for i in xrange(len(response.results[0].alternatives[0].words)):
+                w = Words()
+                w.word = response.results[0].alternatives[0].words[i].word
+                w.start_time = response.results[0].alternatives[0].words[i].start_time.seconds + \
+                               float(response.results[0].alternatives[0].words[i].start_time.nanos) * 1e-9
+                w.end_time = response.results[0].alternatives[0].words[i].end_time.seconds + \
+                             float(response.results[0].alternatives[0].words[i].end_time.nanos) * 1e-9
+
+                msg.words_list.append(w)
+
             pub_asr_result.publish(msg)
             print("*** SENT RESULT ***")
 
