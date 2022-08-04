@@ -101,3 +101,5 @@ ENV/
 
 # Rope project settings
 .ropeproject
+
+prg_sst_key.json

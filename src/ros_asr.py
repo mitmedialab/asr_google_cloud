@@ -29,8 +29,6 @@ SOFTWARE.
 import argparse  # Get command-line arguments.
 from six.moves import queue  # Thread-safe queue for buffering audio data.
 from google.cloud import speech as google_speech
-from google.cloud.speech import enums as google_enums
-from google.cloud.speech import types as google_types
 import rospy  # Get audio data over ROS and publish results.
 from r1d1_msgs.msg import AndroidAudio
 from std_msgs.msg import Header
@@ -187,19 +185,19 @@ def run_asr(sample_rate):
         client = google_speech.SpeechClient()
         # TODO set sample rate etc from AndroidAudio messages.
         # Audio encoding arg curently specifies raw 16-bit signed LE samples.
-        config = google_types.RecognitionConfig(
-            encoding=google_enums.RecognitionConfig.AudioEncoding.LINEAR16,
+        config = google_speech.RecognitionConfig(
+            encoding="LINEAR16",
             sample_rate_hertz=sample_rate,
             language_code=language_code)
         # TODO add as arg above: speech_context={"phrases": ["words", "here"]}
-        streaming_config = google_types.StreamingRecognitionConfig(
+        streaming_config = google_speech.StreamingRecognitionConfig(
             config=config, interim_results=True)
 
         # Start streaming audio to Google.
         # TODO update stream with buffer coming over ROS...
         with RosAudioStream() as stream:
             audio_stream_generator = stream.audio_generator()
-            requests = (google_types.StreamingRecognizeRequest(
+            requests = (google_speech.StreamingRecognizeRequest(
                 audio_content=content) for content in audio_stream_generator)
 
             # Get responses from Google.
@@ -211,7 +209,7 @@ def run_asr(sample_rate):
             except SystemExit:
                 raise
             except Exception as e:
-                print e
+                print(e)
                 # A request can only have about ~60s of audio in it; after
                 # that, we get an error. So we restart.
                 print("Hit audio limit. Restarting...")
