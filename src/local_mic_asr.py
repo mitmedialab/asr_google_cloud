@@ -213,13 +213,13 @@ def listen_print_loop(responses, stream):
                                     transcript)
             msg.confidence = response.results[0].alternatives[0].confidence
 
-            for i in xrange(len(response.results[0].alternatives[0].words)):
+            for i in range(len(response.results[0].alternatives[0].words)):
                 w = Words()
                 w.word = response.results[0].alternatives[0].words[i].word
                 w.start_time = response.results[0].alternatives[0].words[i].start_time.seconds + \
-                               float(response.results[0].alternatives[0].words[i].start_time.nanos) * 1e-9
+                               float(response.results[0].alternatives[0].words[i].start_time.microseconds) * 1e-6
                 w.end_time = response.results[0].alternatives[0].words[i].end_time.seconds + \
-                             float(response.results[0].alternatives[0].words[i].end_time.nanos) * 1e-9
+                             float(response.results[0].alternatives[0].words[i].end_time.microseconds) * 1e-6
 
                 msg.words_list.append(w)
 
@@ -302,13 +302,13 @@ def main():
     send_data = True
 
     client = speech.SpeechClient()
-    config = speech.types.RecognitionConfig(
-        encoding=speech.enums.RecognitionConfig.AudioEncoding.LINEAR16,
+    config = speech.RecognitionConfig(
+        encoding="LINEAR16",
         sample_rate_hertz=SAMPLE_RATE,
         language_code='en-US',
         max_alternatives=1,
         enable_word_time_offsets=True)
-    streaming_config = speech.types.StreamingRecognitionConfig(
+    streaming_config = speech.StreamingRecognitionConfig(
         config=config,
         interim_results=True)
 
@@ -319,7 +319,7 @@ def main():
     with mic_manager as stream:
         while not stream.closed:
             audio_generator = stream.generator()
-            requests = (speech.types.StreamingRecognizeRequest(
+            requests = (speech.StreamingRecognizeRequest(
                 audio_content=content)
                 for content in audio_generator)
 
