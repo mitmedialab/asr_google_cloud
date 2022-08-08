@@ -297,13 +297,13 @@ def main():
     global publish_alternatives
     publish_alternatives = False
     global publish_final
-    publish_final = True
+    publish_final = False
     global send_data
     send_data = True
 
     client = speech.SpeechClient()
     config = speech.RecognitionConfig(
-        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
+        encoding="LINEAR16",
         sample_rate_hertz=SAMPLE_RATE,
         language_code='en-US',
         enable_word_time_offsets=True)
