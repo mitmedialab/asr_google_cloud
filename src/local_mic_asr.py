@@ -303,10 +303,9 @@ def main():
 
     client = speech.SpeechClient()
     config = speech.RecognitionConfig(
-        encoding="LINEAR16",
+        encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
         sample_rate_hertz=SAMPLE_RATE,
         language_code='en-US',
-        max_alternatives=1,
         enable_word_time_offsets=True)
     streaming_config = speech.StreamingRecognitionConfig(
         config=config,

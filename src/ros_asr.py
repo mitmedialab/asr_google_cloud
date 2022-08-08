@@ -186,7 +186,7 @@ def run_asr(sample_rate):
         # TODO set sample rate etc from AndroidAudio messages.
         # Audio encoding arg curently specifies raw 16-bit signed LE samples.
         config = google_speech.RecognitionConfig(
-            encoding="LINEAR16",
+            encoding=google_speech.RecognitionConfig.AudioEncoding.LINEAR16,
             sample_rate_hertz=sample_rate,
             language_code=language_code)
         # TODO add as arg above: speech_context={"phrases": ["words", "here"]}
