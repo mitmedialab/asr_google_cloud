@@ -27,15 +27,7 @@ code](https://github.com/GoogleCloudPlatform/python-docs-samples/tree/master/spe
 In particular, you can use the Google Cloud SDK when running locally.
 
 ### Install the dependencies
-1. (Recommended) Install [pipenv](http://pipenv.org/) if you do not already
-   have it.
-
-2. Run `pipenv --two --site-packages` to set up a virtual environment with
-   python 2 and global site-packages available (which means you won't have to
-   install ROS in the virtual environment).
-
-3. Run `pipenv install` and all the dependencies listed in the Pipfile will be
-   installed for you.
+1. Use python virtual environment or conda environment to install dependencies listed below
 
 However, note that pip may not be able to successfully install portaudio, which
 is a dependency of pyaudio. See details below.
@@ -57,12 +49,6 @@ The dependencies are listed in the `Pipfile`:
       are more details on the [PyAudio installation instructions
       page](https://people.csail.mit.edu/hubert/pyaudio/#downloads).
     - MIT license
-
-**If you are going to use the Pipfile.lock to install stuff, note that there
-are now two pip lock files.** One of them has "-py3" appended to it and the
-other has "-py27" appended to it. This is because the lock file has different
-stuff in it depending on which version of python you are using! Use whichever
-is appropriate for your use case.
 
 In addition, these scripts were developed and tested with:
 
@@ -105,7 +91,7 @@ To continuously transcribe audio from r1d1\_action (e.g., from Tega App) from
 an Android device using AndroidAudio messages, and get ASR results back, run:
 
 ```sh
-$ pipenv run python ros_asr.py
+$ python ros_asr.py
 ```
 To run the `src/ros_asr.py` script from anywhere, you can use the
 `run_ros_asr.sh` script. You may need to modify the script to use the filepath
@@ -115,7 +101,7 @@ To stream audio from your local microphone to Google and get ASR results back,
 run:
 
 ```sh
-$ pipenv run python local_mic_asr.py
+$ python local_mic_asr.py
 ```
 
 ## Further reading
