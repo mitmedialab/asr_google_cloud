@@ -39,11 +39,14 @@ Example usage:
 # [START speech_transcribe_infinite_streaming]
 from __future__ import division
 
+import requests
+import json
 import time
 import re
 import sys
 
-from google.cloud import speech
+# from google.cloud import speech
+import assemblyai as aai
 
 import pyaudio
 from six.moves import queue
@@ -54,6 +57,8 @@ from std_msgs.msg import Header
 from asr_google_cloud.msg import AsrResult
 from asr_google_cloud.msg import AsrCommand
 from asr_google_cloud.msg import Words
+
+from passwords import ASSEMBLYAI_API_KEY
 
 # Audio recording parameters
 STREAMING_LIMIT = 55000
@@ -301,31 +306,48 @@ def main():
     global send_data
     send_data = True
 
-    client = speech.SpeechClient()
-    config = speech.RecognitionConfig(
-        encoding="LINEAR16",
-        sample_rate_hertz=SAMPLE_RATE,
-        language_code='en-US',
-        enable_word_time_offsets=True)
-    streaming_config = speech.StreamingRecognitionConfig(
-        config=config,
-        interim_results=True)
-
     mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
+    
+    base_url = "https://api.assemblyai.com/v2/transcript"
+
+    headers = {
+        "authorization": ASSEMBLYAI_API_KEY
+    }
 
     #print('Say "Quit" or "Exit" to terminate the program.')
 
     with mic_manager as stream:
         while not stream.closed:
             audio_generator = stream.generator()
-            requests = (speech.StreamingRecognizeRequest(
-                audio_content=content)
-                for content in audio_generator)
+            
+            with open("temp.wav", mode='bx') as f:
+                f.write(content for content in audio_generator)
+                
+            with open("temp.wav" , "rb") as f:
+                response = requests.post(base_url + "/upload",
+                                        headers=headers,
+                                        data=f)
+            upload_url = response.json()["upload_url"]
+            
+            data = {"audio_url": upload_url}
+            response = requests.post(base_url, json=data, headers=headers)
 
-            responses = client.streaming_recognize(streaming_config,
-                                                   requests)
+            transcript_id = response.json()['id']
+            polling_endpoint = f"{base_url}/{transcript_id}"
+
+            while True:
+                transcription_result = requests.get(polling_endpoint, headers=headers).json()
+
+                if transcription_result['status'] == 'completed':
+                    break
+                elif transcription_result['status'] == 'error':
+                    raise RuntimeError(f"Transcription failed: {transcription_result['error']}")
+                else:
+                    time.sleep(2)
+
+            print(transcription_result)
             # Now, put the transcription responses to use.
-            listen_print_loop(responses, stream)
+            # listen_print_loop(transcript, stream)
 
 
 if __name__ == '__main__':
