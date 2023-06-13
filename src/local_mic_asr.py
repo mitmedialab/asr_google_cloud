@@ -321,8 +321,10 @@ async def send_receive(recorder: ResumableMicrophoneStream):
             while True:
                 try:
                     result_str = await _ws.recv()
-                    print("message received")
-                    print(json.loads(result_str)['text'])
+                    result = json.load(result_str)
+                    print(result)
+                    # if (result['message_type']=="FinalTranscript"):
+                    #     print(result['text'])
                 except websockets.exceptions.ConnectionClosedError as e:
                     print(e)
                     assert e.code == 4008
@@ -357,7 +359,9 @@ def main():
     mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
     
     #print('Say "Quit" or "Exit" to terminate the program.')
-    asyncio.run(send_receive(mic_manager))
+    with mic_manager as stream:
+        while not stream.closed():
+            asyncio.run(send_receive(stream))
 
 if __name__ == '__main__':
     main()
