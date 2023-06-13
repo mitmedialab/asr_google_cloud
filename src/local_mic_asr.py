@@ -44,6 +44,9 @@ import json
 import time
 import re
 import sys
+import websockets
+import asyncio
+import base64
 
 # from google.cloud import speech
 import assemblyai as aai
@@ -59,6 +62,7 @@ from asr_google_cloud.msg import AsrCommand
 from asr_google_cloud.msg import Words
 
 from passwords import ASSEMBLYAI_API_KEY
+URL = "wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000"
 
 # Audio recording parameters
 STREAMING_LIMIT = 55000
@@ -284,6 +288,50 @@ def on_asr_command(data):
     else:
         send_data = False
 
+async def send_receive(recorder: ResumableMicrophoneStream):
+    async with websockets.connect(
+        URL,
+        extra_headers=(("Authorization", ASSEMBLYAI_API_KEY),),
+        ping_interval=5,
+        ping_timeout=20
+    ) as _ws:
+        await asyncio.sleep(0.1)
+        print("Receiving SessionBegins ...")
+        session_begins = await _ws.recv()
+        print(session_begins)
+        print("Sending messages ...")
+        async def send():
+            while True:
+                try:
+                    data = recorder._audio_stream.read(recorder._chunk_size)
+                    data = base64.b64encode(data).decode("utf-8")
+                    json_data = json.dumps({"audio_data":str(data)})
+                    await _ws.send(json_data)
+                except websockets.exceptions.ConnectionClosedError as e:
+                    print(e)
+                    assert e.code == 4008
+                    break
+                except Exception as e:
+                    assert False, "Not a websocket 4008 error"
+                await asyncio.sleep(0.01)
+            
+            return True
+        
+        async def receive():
+            while True:
+                try:
+                    result_str = await _ws.recv()
+                    print("message received")
+                    print(json.loads(result_str)['text'])
+                except websockets.exceptions.ConnectionClosedError as e:
+                    print(e)
+                    assert e.code == 4008
+                    break
+                except Exception as e:
+                    assert False, "Not a websocket 4008 error"
+        
+        send_result, receive_result = await asyncio.gather(send(), receive())
+
 def main():
 
     rospy.init_node('google_asr_node', anonymous=False)
@@ -308,47 +356,8 @@ def main():
 
     mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
     
-    base_url = "https://api.assemblyai.com/v2/transcript"
-
-    headers = {
-        "authorization": ASSEMBLYAI_API_KEY
-    }
-
     #print('Say "Quit" or "Exit" to terminate the program.')
-
-    with mic_manager as stream:
-        while not stream.closed:
-            audio_generator = stream.generator()
-            
-            with open("temp.wav", mode='bx') as f:
-                f.write(content for content in audio_generator)
-                
-            with open("temp.wav" , "rb") as f:
-                response = requests.post(base_url + "/upload",
-                                        headers=headers,
-                                        data=f)
-            upload_url = response.json()["upload_url"]
-            
-            data = {"audio_url": upload_url}
-            response = requests.post(base_url, json=data, headers=headers)
-
-            transcript_id = response.json()['id']
-            polling_endpoint = f"{base_url}/{transcript_id}"
-
-            while True:
-                transcription_result = requests.get(polling_endpoint, headers=headers).json()
-
-                if transcription_result['status'] == 'completed':
-                    break
-                elif transcription_result['status'] == 'error':
-                    raise RuntimeError(f"Transcription failed: {transcription_result['error']}")
-                else:
-                    time.sleep(2)
-
-            print(transcription_result)
-            # Now, put the transcription responses to use.
-            # listen_print_loop(transcript, stream)
-
+    asyncio.run(send_receive(mic_manager))
 
 if __name__ == '__main__':
     main()
