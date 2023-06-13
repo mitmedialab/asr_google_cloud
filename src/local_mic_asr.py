@@ -112,7 +112,7 @@ class ResumableMicrophoneStream:
             # Run the audio stream asynchronously to fill the buffer object.
             # This is necessary so that the input device's buffer doesn't
             # overflow while the calling thread makes network requests, etc.
-            stream_callback=self._fill_buffer,
+            # stream_callback=self._fill_buffer,
         )
 
         return self
@@ -303,7 +303,7 @@ async def send_receive(recorder: ResumableMicrophoneStream):
         async def send():
             while True:
                 try:
-                    data = recorder._audio_stream.read(recorder._chunk_size)
+                    data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
                     data = base64.b64encode(data).decode("utf-8")
                     json_data = json.dumps({"audio_data":str(data)})
                     await _ws.send(json_data)
@@ -321,10 +321,9 @@ async def send_receive(recorder: ResumableMicrophoneStream):
             while True:
                 try:
                     result_str = await _ws.recv()
-                    result = json.load(result_str)
-                    print(result)
-                    # if (result['message_type']=="FinalTranscript"):
-                    #     print(result['text'])
+                    result = json.loads(result_str)
+                    if (result['message_type']=="FinalTranscript" and result['text']):
+                        print(result['text'])
                 except websockets.exceptions.ConnectionClosedError as e:
                     print(e)
                     assert e.code == 4008
@@ -360,7 +359,7 @@ def main():
     
     #print('Say "Quit" or "Exit" to terminate the program.')
     with mic_manager as stream:
-        while not stream.closed():
+        while not stream.closed:
             asyncio.run(send_receive(stream))
 
 if __name__ == '__main__':
