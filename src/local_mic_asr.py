@@ -324,6 +324,19 @@ async def send_receive(recorder: ResumableMicrophoneStream):
                     result = json.loads(result_str)
                     if (result['message_type']=="FinalTranscript" and result['text']):
                         print(result['text'])
+                        msg = AsrResult()
+                        msg.header = Header()
+                        msg.header.stamp = rospy.Time.now()
+                        msg.transcription = result['text']
+                        msg.confidence = result['confidence']
+                        msg.words_list = result['words']
+                        pub_asr_result.publish(msg)
+                        rospy.log(msg)
+                    elif (result['message_type']=='SessionBegins'):
+                        print(result)
+                    elif (result['message_type']=='PartialTranscript' and result['text']):
+                        # print(result['text']) # for debugging
+                        pass
                 except websockets.exceptions.ConnectionClosedError as e:
                     print(e)
                     assert e.code == 4008
