@@ -44,7 +44,7 @@ import json
 import time
 import re
 import sys
-import websockets
+import websocket
 import asyncio
 import base64
 
@@ -288,49 +288,71 @@ def on_asr_command(data):
     else:
         send_data = False
 
-async def send_receive(recorder: ResumableMicrophoneStream):
-    async with websockets.connect(
-        URL,
-        extra_headers=(("Authorization", ASSEMBLYAI_API_KEY),),
-        ping_interval=5,
-        ping_timeout=20
-    ) as _ws:
-        await asyncio.sleep(0.1)
-        print("Receiving SessionBegins ...")
-        session_begins = await _ws.recv()
-        print(session_begins)
-        print("Sending messages ...")
-        async def send():
-            while True:
-                try:
-                    data = recorder._audio_stream.read(recorder._chunk_size)
-                    data = base64.b64encode(data).decode("utf-8")
-                    json_data = json.dumps({"audio_data":str(data)})
-                    await _ws.send(json_data)
-                except websockets.exceptions.ConnectionClosedError as e:
-                    print(e)
-                    assert e.code == 4008
-                    break
-                except Exception as e:
-                    assert False, "Not a websocket 4008 error"
-                await asyncio.sleep(0.01)
+# async def send_receive(recorder: ResumableMicrophoneStream):
+#     async with websockets.connect(
+#         URL,
+#         extra_headers=(("Authorization", ASSEMBLYAI_API_KEY),),
+#         ping_interval=5,
+#         ping_timeout=20
+#     ) as _ws:
+#         await asyncio.sleep(0.1)
+#         print("Receiving SessionBegins ...")
+#         session_begins = await _ws.recv()
+#         print(session_begins)
+#         print("Sending messages ...")
+#         async def send():
+#             while True:
+#                 try:
+#                     data = recorder._audio_stream.read(recorder._chunk_size)
+#                     data = base64.b64encode(data).decode("utf-8")
+#                     json_data = json.dumps({"audio_data":str(data)})
+#                     await _ws.send(json_data)
+#                 except websockets.exceptions.ConnectionClosedError as e:
+#                     print(e)
+#                     assert e.code == 4008
+#                     break
+#                 except Exception as e:
+#                     assert False, "Not a websocket 4008 error"
+#                 await asyncio.sleep(0.01)
             
-            return True
+#             return True
         
-        async def receive():
-            while True:
-                try:
-                    result_str = await _ws.recv()
-                    print("message received")
-                    print(json.loads(result_str)['text'])
-                except websockets.exceptions.ConnectionClosedError as e:
-                    print(e)
-                    assert e.code == 4008
-                    break
-                except Exception as e:
-                    assert False, "Not a websocket 4008 error"
+#         async def receive():
+#             while True:
+#                 try:
+#                     result_str = await _ws.recv()
+#                     print("message received")
+#                     print(json.loads(result_str)['text'])
+#                 except websockets.exceptions.ConnectionClosedError as e:
+#                     print(e)
+#                     assert e.code == 4008
+#                     break
+#                 except Exception as e:
+#                     assert False, "Not a websocket 4008 error"
         
-        send_result, receive_result = await asyncio.gather(send(), receive())
+#         send_result, receive_result = await asyncio.gather(send(), receive())
+
+def on_message(ws, message):
+    message = json.loads(message)
+    if message["message_type"] == "SessionBegins":
+        session_id = message["session_id"]
+        expires_at = message["expires_at"]
+        print(f"Session ID: {session_id}")
+        print(f"Expires at: {expires_at}")
+    elif message['message_type'] == 'FinalTranscript':
+        print(f"Final transcript received: {message['text']}")
+
+def on_error(ws, error):
+    error_message = json.loads(error)
+    if error_message['error_code'] == 4000:
+        print("Sample rate must be a positive integer")
+
+def on_open(ws):
+    pass
+
+def on_close(ws):
+    pass
+
 
 def main():
 
@@ -356,8 +378,28 @@ def main():
 
     mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
     
-    #print('Say "Quit" or "Exit" to terminate the program.')
-    asyncio.run(send_receive(mic_manager))
+    # Instantiate the WebSocket application
+    ws = websocket.WebSocketApp(
+        f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}",
+        header={"Authorization": ASSEMBLYAI_API_KEY},
+        on_message=on_message,
+        on_open=on_open,
+        on_error=on_error,
+        on_close=on_close
+    )
+
+    # Start the WebSocket application
+    ws.run_forever()
+    
+    with mic_manager as stream:
+        while not stream.closed():
+            try:
+                data = stream._audio_stream.read(stream._chunk_size)
+                data = base64.b64encode(data).decode("utf-8")
+                json_data = json.dumps({"audio_data":str(data)})
+                ws.send(json_data)
+            except Exception as e:
+                assert False, e
 
 if __name__ == '__main__':
     main()
