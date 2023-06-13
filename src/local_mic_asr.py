@@ -302,52 +302,54 @@ async def send_receive(recorder: ResumableMicrophoneStream):
         print("Sending messages ...")
         async def send():
             while True:
-                try:
-                    data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
-                    data = base64.b64encode(data).decode("utf-8")
-                    json_data = json.dumps({"audio_data":str(data)})
-                    await _ws.send(json_data)
-                except websockets.exceptions.ConnectionClosedError as e:
-                    print(e)
-                    assert e.code == 4008
-                    break
-                except Exception as e:
-                    assert False, "Not a websocket 4008 error"
+                if send_data:
+                    try:
+                        data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
+                        data = base64.b64encode(data).decode("utf-8")
+                        json_data = json.dumps({"audio_data":str(data)})
+                        await _ws.send(json_data)
+                    except websockets.exceptions.ConnectionClosedError as e:
+                        print(e)
+                        assert e.code == 4008
+                        break
+                    except Exception as e:
+                        assert False, "Not a websocket 4008 error"
                 await asyncio.sleep(0.01)
             
             return True
         
         async def receive():
             while True:
-                try:
-                    result_str = await _ws.recv()
-                    result = json.loads(result_str)
-                    if (result['message_type']=="FinalTranscript" and result['text']):
-                        print(result['text'])
-                        msg = AsrResult()
-                        msg.header = Header()
-                        msg.header.stamp = rospy.Time.now()
-                        msg.transcription = result['text']
-                        msg.confidence = result['confidence']
-                        for i in result['words']:
-                            w = Words()
-                            w.word = i['text']
-                            w.start_time = i['start']
-                            w.end_time = i['end']
-                            msg.words_list.append(w)
-                        pub_asr_result.publish(msg)
-                        rospy.loginfo(msg)
-                    elif (result['message_type']=='SessionBegins'):
-                        print(result)
-                    elif (result['message_type']=='PartialTranscript' and result['text']):
-                        # print(result['text']) # for debugging
-                        pass
-                except websockets.exceptions.ConnectionClosedError as e:
-                    print(e)
-                    assert e.code == 4008
-                    break
-                except Exception as e:
-                    assert False, "Not a websocket 4008 error"
+                if send_data:
+                    try:
+                        result_str = await _ws.recv()
+                        result = json.loads(result_str)
+                        if (result['message_type']=="FinalTranscript" and result['text']):
+                            print(result['text'])
+                            msg = AsrResult()
+                            msg.header = Header()
+                            msg.header.stamp = rospy.Time.now()
+                            msg.transcription = result['text']
+                            msg.confidence = result['confidence']
+                            for i in result['words']:
+                                w = Words()
+                                w.word = i['text']
+                                w.start_time = i['start']
+                                w.end_time = i['end']
+                                msg.words_list.append(w)
+                            pub_asr_result.publish(msg)
+                            rospy.loginfo(msg)
+                        elif (result['message_type']=='SessionBegins'):
+                            print(result)
+                        elif (result['message_type']=='PartialTranscript' and result['text']):
+                            # print(result['text']) # for debugging
+                            pass
+                    except websockets.exceptions.ConnectionClosedError as e:
+                        print(e)
+                        assert e.code == 4008
+                        break
+                    except Exception as e:
+                        assert False, "Not a websocket 4008 error"
         
         send_result, receive_result = await asyncio.gather(send(), receive())
 
