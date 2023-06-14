@@ -39,19 +39,16 @@ Example usage:
 # [START speech_transcribe_infinite_streaming]
 from __future__ import division
 
-import requests
 import json
 import time
 import re
 import sys
-import websockets
-import asyncio
 import base64
 import websocket
 import threading
 import multiprocessing
 
-# from google.cloud import speech
+from google.cloud import speech
 import assemblyai as aai
 
 import pyaudio
@@ -65,13 +62,13 @@ from asr_google_cloud.msg import AsrCommand
 from asr_google_cloud.msg import Words
 
 from passwords import ASSEMBLYAI_API_KEY
-URL = "wss://api.assemblyai.com/v2/realtime/ws?sample_rate=16000"
 
 # Audio recording parameters
 STREAMING_LIMIT = 55000
 SAMPLE_RATE = 16000
 CHUNK_SIZE = int(SAMPLE_RATE / 10)  # 100ms
 
+URL = f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}"
 
 def get_current_time():
     return int(round(time.time() * 1000))
@@ -292,70 +289,6 @@ def on_asr_command(data):
     else:
         send_data = False
 
-async def send_receive(recorder: ResumableMicrophoneStream):
-    async with websockets.connect(
-        URL,
-        extra_headers=(("Authorization", ASSEMBLYAI_API_KEY),),
-        ping_interval=5,
-        ping_timeout=20
-    ) as _ws:
-        await asyncio.sleep(0.1)
-        print("Receiving SessionBegins ...")
-        session_begins = await _ws.recv()
-        print(session_begins)
-        print("Sending messages ...")
-        async def send():
-            while True:
-                try:
-                    data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
-                    data = base64.b64encode(data).decode("utf-8")
-                    json_data = json.dumps({"audio_data":str(data)})
-                    await _ws.send(json_data)
-                except websockets.exceptions.ConnectionClosedError as e:
-                    print(e)
-                    assert e.code == 4008
-                    break
-                except Exception as e:
-                    assert False, "Not a websocket 4008 error"
-                await asyncio.sleep(0.01)
-            
-            return True
-        
-        async def receive():
-            while True:
-                try:
-                    result_str = await _ws.recv()
-                    result = json.loads(result_str)
-                    if (result['message_type']=="FinalTranscript" and result['text']):
-                        print(result['text'])
-                        msg = AsrResult()
-                        msg.header = Header()
-                        msg.header.stamp = rospy.Time.now()
-                        msg.transcription = result['text']
-                        msg.confidence = result['confidence']
-                        for i in result['words']:
-                            w = Words()
-                            w.word = i['text']
-                            w.start_time = i['start']
-                            w.end_time = i['end']
-                            msg.words_list.append(w)
-                        pub_asr_result.publish(msg)
-                        rospy.loginfo(msg)
-                    elif (result['message_type']=='SessionBegins'):
-                        print(result)
-                    elif (result['message_type']=='PartialTranscript' and result['text']):
-                        # print(result['text']) # for debugging
-                        pass
-                except websockets.exceptions.ConnectionClosedError as e:
-                    print(e)
-                    assert e.code == 4008
-                    break
-                except Exception as e:
-                    assert False, "Not a websocket 4008 error"
-        
-        send_result, receive_result = await asyncio.gather(send(), receive())
-
-
 class ASRThread:
     """Opens a recording stream as a generator yielding the audio chunks."""
     def __init__(self, url, show_intermediate=False):
@@ -443,14 +376,44 @@ def main():
     publish_final = False
     global send_data
     send_data = True
+    
+    ### Google Cloud Version
+    '''
+    client = speech.SpeechClient()
+    config = speech.RecognitionConfig(
+        encoding="LINEAR16",
+        sample_rate_hertz=SAMPLE_RATE,
+        language_code='en-US',
+        enable_word_time_offsets=True)
+    streaming_config = speech.StreamingRecognitionConfig(
+        config=config,
+        interim_results=True)
 
+    mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
+
+    #print('Say "Quit" or "Exit" to terminate the program.')
+
+    with mic_manager as stream:
+        while not stream.closed:
+            audio_generator = stream.generator()
+            requests = (speech.StreamingRecognizeRequest(
+                audio_content=content)
+                for content in audio_generator)
+
+            responses = client.streaming_recognize(streaming_config,
+                                                   requests)
+            # Now, put the transcription responses to use.
+            listen_print_loop(responses, stream)
+    '''
+    
+    ### Assembly AI (with threading) version
     thr = ASRThread(URL)
     thr.start()
     print("more stuff can be done here")
     
-    time.sleep(20)
-    
-    thr.terminate()
+    # Uncomment to stop ASR
+    # time.sleep(20)
+    # thr.terminate()
 
 if __name__ == '__main__':
     main()
