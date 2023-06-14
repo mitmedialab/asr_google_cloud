@@ -358,93 +358,69 @@ async def send_receive(recorder: ResumableMicrophoneStream):
 
 class ASRThread:
     """Opens a recording stream as a generator yielding the audio chunks."""
-    def __init__(self, url):
+    def __init__(self, url, show_intermediate=False):
         self.URL = url
         self.mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
-        
+        self.auth_header = {"Authorization": ASSEMBLYAI_API_KEY}
+        self.show_intermediate = show_intermediate
+
     def start(self):
         self.proc = multiprocessing.Process(target=self.thread_operation)
         self.proc.start()
         
     def terminate(self):
-        self.ws.close()
         if not self.mic_manager.closed:
             self.mic_manager.__exit__()
-            time.sleep(1)
         self.proc.terminate()
         
     def thread_operation(self):
-        auth_header = {"Authorization": ASSEMBLYAI_API_KEY}
-        self.ws = websocket.WebSocketApp(f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}", header=auth_header, on_open=self.on_open, on_message=self.on_message, on_error=self.on_error, on_close=self.on_close)
-        thread = threading.Thread(target=self.ws.run_forever)
-        thread.daemon = True
-        thread.start()
+        self.ws = websocket.WebSocketApp(f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}", header=self.auth_header, on_open=self.on_open, on_message=self.on_message, on_error=self.on_error, on_close=self.on_close)
+        try:
+            thread = threading.Thread(target=self.ws.run_forever)
+            thread.daemon = True
+            thread.start()
 
-        time.sleep(1)
-        
-        with self.mic_manager as stream:
-            while not stream.closed:
-                self.send_audio(self.ws, stream)  
+            time.sleep(1)
+            
+            with self.mic_manager as stream:
+                while not stream.closed:
+                    self.send_audio(self.ws, stream)  
+        except Exception as e:
+            print(e)
+            self.ws.close()
 
 
-    def on_message(ws, message):
+    def on_message(self, ws, message):
         message = json.loads(message)
         if message["message_type"] == "SessionBegins":
             session_id = message["session_id"]
             expires_at = message["expires_at"]
             print(f"Session ID: {session_id}")
             print(f"Expires at: {expires_at}")
-        elif message["message_type"] == "PartialTranscript":
+        elif self.show_intermediate and message["message_type"] == "PartialTranscript":
             print(f"Partial transcript received: {message['text']}")
         elif message['message_type'] == 'FinalTranscript':
             print(f"Final transcript received: {message['text']}")
 
-    def on_error(ws, error):
+    def on_error(self, ws, error):
         print(error)
         error_message = json.loads(error)
         if error_message['error_code'] == 4000:
             print("Sample rate must be a positive integer")
+        else:
+            print(error_message)
 
-    def on_close(*args):
+    def on_close(self, *args):
         print("WebSocket closed")
 
-    def on_open(ws):
+    def on_open(self, ws):
         pass
 
-    def send_audio(ws, recorder):
+    def send_audio(self, ws, recorder):
         data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
         data = base64.b64encode(data).decode("utf-8")
         json_data = json.dumps({"audio_data":str(data)})
         ws.send(json_data)
-
-# def send_audio_thread(ws, recorder):
-#     with recorder as stream:
-#         while not stream.closed:
-#             data = stream._audio_stream.read(stream._chunk_size, exception_on_overflow=False)
-#             data = base64.b64encode(data).decode("utf-8")
-#             json_data = json.dumps({"audio_data":str(data)})
-#             ws.send(json_data)
-
-# def terminate_session(socket):
-#     payload = {'terminate_session': True}
-#     message = json.dumps(payload)
-#     socket.send(message)
-#     socket.close()
-
-
-# def multi_proc(mic_manager):
-#     auth_header = {"Authorization": ASSEMBLYAI_API_KEY}
-#     ws = websocket.WebSocketApp(f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}", header=auth_header, on_open=on_open, on_message=on_message, on_error=on_error, on_close=on_close)
-#     thread = threading.Thread(target=ws.run_forever)
-#     thread.daemon = True
-#     thread.start()
-
-#     time.sleep(2)
-    
-#     with mic_manager as stream:
-#         while not stream.closed:
-#             send_audio(ws, stream)  
-
 
 def main():
 
@@ -468,7 +444,6 @@ def main():
     global send_data
     send_data = True
 
-    mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
     thr = ASRThread(URL)
     thr.start()
     print("more stuff can be done here")
@@ -476,37 +451,7 @@ def main():
     time.sleep(20)
     
     thr.terminate()
-    '''
-    proc = multiprocessing.Process(target=multi_proc, args=(mic_manager,))
-    proc.start()
 
-    time.sleep(20)
-    print("time to terminate")
-    proc.terminate()
-    '''
-
-
-    '''
-    #websocket.enableTrace(True)
-    auth_header = {"Authorization": ASSEMBLYAI_API_KEY}
-    ws = websocket.WebSocketApp(f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}", header=auth_header, on_open=on_open, on_message=on_message, on_error=on_error, on_close=on_close)
-    thread = threading.Thread(target=ws.run_forever)
-    thread.daemon = True
-    thread.start()
-
-
-    print("this is not blocking")
-
-    time.sleep(2)
-
-    print("still alive")
-
-    # #print('Say "Quit" or "Exit" to terminate the program.')
-    with mic_manager as stream:
-        while not stream.closed:
-            send_audio(ws, stream)
-    #         asyncio.run(send_receive(stream))
-    '''
 if __name__ == '__main__':
     main()
 # [END speech_transcribe_infinite_streaming]
