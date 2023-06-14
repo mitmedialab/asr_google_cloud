@@ -109,10 +109,10 @@ class ResumableMicrophoneStream:
             rate=self._rate,
             input=True,
             frames_per_buffer=self._chunk_size,
-            input_device_index=0
             # Run the audio stream asynchronously to fill the buffer object.
             # This is necessary so that the input device's buffer doesn't
             # overflow while the calling thread makes network requests, etc.
+            # NOTE uncomment to run google cloud asr
             # stream_callback=self._fill_buffer,
         )
 
@@ -332,7 +332,7 @@ class ASRThread:
             print(f"Expires at: {expires_at}")
         elif self.show_intermediate and message["message_type"] == "PartialTranscript":
             print(f"Partial transcript received: {message['text']}")
-        elif message['message_type'] == 'FinalTranscript':
+        elif message['message_type'] == 'FinalTranscript' and message['text']:
             print(f"Final transcript received: {message['text']}")
 
     def on_error(self, ws, error):
@@ -407,6 +407,7 @@ def main():
     '''
     
     ### Assembly AI (with threading) version
+    #'''
     thr = ASRThread(URL)
     thr.start()
     print("more stuff can be done here")
@@ -414,6 +415,7 @@ def main():
     # Uncomment to stop ASR
     # time.sleep(20)
     # thr.terminate()
+    #'''
 
 if __name__ == '__main__':
     main()
