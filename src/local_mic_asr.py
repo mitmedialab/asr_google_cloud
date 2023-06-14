@@ -291,11 +291,14 @@ def on_asr_command(data):
 
 class ASRThread:
     """Opens a recording stream as a generator yielding the audio chunks."""
-    def __init__(self, publisher, show_intermediate=False):
+    def __init__(self, show_intermediate=False):
+        rospy.init_node('assemblyai_asr_node', anonymous=False)
+        self.publisher = rospy.Publisher('asr_result', AsrResult, queue_size=10)
+        self.subscriber = rospy.Subscriber('asr_command', AsrCommand, on_asr_command)
+
         self.URL = URL
         self.mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
         self.auth_header = {"Authorization": ASSEMBLYAI_API_KEY}
-        self.publisher = publisher
         self.show_intermediate = show_intermediate
 
     def start(self):
@@ -336,7 +339,7 @@ class ASRThread:
         elif message['message_type'] == 'FinalTranscript' and message['text']:
             print(f"Final transcript received: {message['text']}")
             print(message['text'])
-            msg = Asrmessage()
+            msg = AsrResult()
             msg.header = Header()
             msg.header.stamp = rospy.Time.now()
             msg.transcription = message['text']
@@ -424,7 +427,7 @@ def main():
     
     ### Assembly AI (with threading) version
     #'''
-    thr = ASRThread(pub_asr_result)
+    thr = ASRThread()
     thr.start()
     print("more stuff can be done here")
     
