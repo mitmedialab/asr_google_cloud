@@ -37,6 +37,10 @@ Example usage:
 """
 
 # [START speech_transcribe_infinite_streaming]
+
+### NOTE this is an attempt at making an asynchronous (using asyncio) connection to assembly.ai
+###      that can be started/stopped at will (since the connection will otherwise timeout)
+
 from __future__ import division
 
 import json
