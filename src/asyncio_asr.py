@@ -294,24 +294,19 @@ def on_asr_command(data):
         send_data = True
     else:
         send_data = False
-        
-async def connect():
-    ws = await websockets.connect(
+
+async def send_receive(recorder: ResumableMicrophoneStream):
+    async with websockets.connect(
         URL,
         extra_headers=(("Authorization", ASSEMBLYAI_API_KEY),),
         ping_interval=5,
         ping_timeout=20
-    )
-    await asyncio.sleep(0.1)
-    print("Receiving SessionBegins ...")
-    session_begins = await ws.recv()
-    print(session_begins)
-    print("Sending messages ...")
-    return ws
-
-async def send_receive(recorder: ResumableMicrophoneStream):
-    try:
-        _ws = connect()
+    ) as _ws:
+        await asyncio.sleep(0.1)
+        print("Receiving SessionBegins ...")
+        session_begins = await _ws.recv()
+        print(session_begins)
+        print("Sending messages ...")
         async def send():
             while True:
                 if send_data:
@@ -323,19 +318,12 @@ async def send_receive(recorder: ResumableMicrophoneStream):
                     except websockets.exceptions.ConnectionClosedError as e:
                         print(e)
                         assert e.code == 4008
-                        for i in range(5):
-                            try:
-                                _ws = connect()
-                                _ws.send(json_data)
-                            except Exception as e:
-                                pass
-                                #print(e)
                         break
                     except Exception as e:
                         assert False, "Not a websocket 4008 error"
                     await asyncio.sleep(0.01)
-                
-                return True
+                else:
+                    assert False
         
         async def receive():
             while True:
@@ -370,9 +358,7 @@ async def send_receive(recorder: ResumableMicrophoneStream):
                     assert False, "Not a websocket 4008 error"
         
         send_result, receive_result = await asyncio.gather(send(), receive())
-    except Exception as e:
-        print(e)
-        
+
 def main():
 
     rospy.init_node('google_asr_node', anonymous=False)
@@ -426,11 +412,11 @@ def main():
     
     ### Assembly AI (with asyncio) version
     mic_manager.__enter__()
-    curr_loop = asyncio.get_event_loop()
-    curr_loop.run_until_complete(send_receive(mic_manager))
     
-    print("other stuff can run here")
-    
+    while True:
+        curr_loop = asyncio.get_event_loop()
+        curr_loop.run_until_complete(send_receive(mic_manager))
+        
     time.sleep(20)
     
     curr_loop.stop()
