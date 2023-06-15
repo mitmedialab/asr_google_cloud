@@ -114,6 +114,7 @@ class ResumableMicrophoneStream:
             rate=self._rate,
             input=True,
             frames_per_buffer=self._chunk_size,
+            input_device_index=6,
             # Run the audio stream asynchronously to fill the buffer object.
             # This is necessary so that the input device's buffer doesn't
             # overflow while the calling thread makes network requests, etc.
@@ -293,35 +294,48 @@ def on_asr_command(data):
         send_data = True
     else:
         send_data = False
-
-async def send_receive(recorder: ResumableMicrophoneStream):
-    async with websockets.connect(
+        
+async def connect():
+    ws = await websockets.connect(
         URL,
         extra_headers=(("Authorization", ASSEMBLYAI_API_KEY),),
         ping_interval=5,
         ping_timeout=20
-    ) as _ws:
-        await asyncio.sleep(0.1)
-        print("Receiving SessionBegins ...")
-        session_begins = await _ws.recv()
-        print(session_begins)
-        print("Sending messages ...")
+    )
+    await asyncio.sleep(0.1)
+    print("Receiving SessionBegins ...")
+    session_begins = await ws.recv()
+    print(session_begins)
+    print("Sending messages ...")
+    return ws
+
+async def send_receive(recorder: ResumableMicrophoneStream):
+    try:
+        _ws = connect()
         async def send():
             while True:
-                try:
-                    data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
-                    data = base64.b64encode(data).decode("utf-8")
-                    json_data = json.dumps({"audio_data":str(data)})
-                    await _ws.send(json_data)
-                except websockets.exceptions.ConnectionClosedError as e:
-                    print(e)
-                    assert e.code == 4008
-                    break
-                except Exception as e:
-                    assert False, "Not a websocket 4008 error"
-                await asyncio.sleep(0.01)
-            
-            return True
+                if send_data:
+                    try:
+                        data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
+                        data = base64.b64encode(data).decode("utf-8")
+                        json_data = json.dumps({"audio_data":str(data)})
+                        await _ws.send(json_data)
+                    except websockets.exceptions.ConnectionClosedError as e:
+                        print(e)
+                        assert e.code == 4008
+                        for i in range(5):
+                            try:
+                                _ws = connect()
+                                _ws.send(json_data)
+                            except Exception as e:
+                                pass
+                                #print(e)
+                        break
+                    except Exception as e:
+                        assert False, "Not a websocket 4008 error"
+                    await asyncio.sleep(0.01)
+                
+                return True
         
         async def receive():
             while True:
@@ -356,7 +370,9 @@ async def send_receive(recorder: ResumableMicrophoneStream):
                     assert False, "Not a websocket 4008 error"
         
         send_result, receive_result = await asyncio.gather(send(), receive())
-
+    except Exception as e:
+        print(e)
+        
 def main():
 
     rospy.init_node('google_asr_node', anonymous=False)
