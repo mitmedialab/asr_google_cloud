@@ -414,9 +414,12 @@ def main():
     mic_manager.__enter__()
     
     while True:
-        curr_loop = asyncio.get_event_loop()
-        curr_loop.run_until_complete(send_receive(mic_manager))
-        
+        if send_data:
+            try:
+                curr_loop = asyncio.get_event_loop()
+                curr_loop.run_until_complete(send_receive(mic_manager))
+            except Exception as e:
+                print(e)
     time.sleep(20)
     
     curr_loop.stop()
