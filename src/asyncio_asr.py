@@ -379,7 +379,7 @@ def main():
     global publish_final
     publish_final = False
     global send_data
-    send_data = True
+    send_data = False
     
     mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
 
