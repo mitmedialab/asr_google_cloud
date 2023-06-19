@@ -349,7 +349,7 @@ async def send_receive(recorder: ResumableMicrophoneStream):
                             w.end_time = i['end']
                             msg.words_list.append(w)
                         pub_asr_result.publish(msg)
-                        rospy.loginfo(msg)
+                        # rospy.loginfo(msg)
                     elif (result['message_type']=='SessionBegins'):
                         print(result)
                     elif (result['message_type']=='PartialTranscript' and result['text']):
