@@ -44,9 +44,8 @@ import time
 import re
 import sys
 import base64
-import websocket
-import threading
-import multiprocessing
+import websockets
+import asyncio
 
 from google.cloud import speech
 import assemblyai as aai
@@ -103,12 +102,24 @@ class ResumableMicrophoneStream:
         self.closed = False
 
         self._audio_interface = pyaudio.PyAudio()
+        self._input_device_index = 0
+        
+        for i in range(self._audio_interface.get_device_count()):
+            device_info = self._audio_interface.get_device_info_by_index(i)
+            try:
+                if "USB audio" in device_info.get('name'):
+                    self._input_device_index = i
+                    break
+            except:
+                pass
+        
         self._audio_stream = self._audio_interface.open(
             format=pyaudio.paInt16,
             channels=self._num_channels,
             rate=self._rate,
             input=True,
             frames_per_buffer=self._chunk_size,
+            input_device_index=self._input_device_index
             # Run the audio stream asynchronously to fill the buffer object.
             # This is necessary so that the input device's buffer doesn't
             # overflow while the calling thread makes network requests, etc.
@@ -289,90 +300,69 @@ def on_asr_command(data):
     else:
         send_data = False
 
-class ASRThread:
-    """Opens a recording stream as a generator yielding the audio chunks."""
-    def __init__(self, show_intermediate=False):
-        rospy.init_node('assemblyai_asr_node', anonymous=False)
-        self.publisher = rospy.Publisher('asr_result', AsrResult, queue_size=10)
-        self.subscriber = rospy.Subscriber('asr_command', AsrCommand, on_asr_command)
-
-        self.URL = URL
-        self.mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
-        self.auth_header = {"Authorization": ASSEMBLYAI_API_KEY}
-        self.show_intermediate = show_intermediate
-
-    def start(self):
-        self.proc = multiprocessing.Process(target=self.thread_operation)
-        self.proc.start()
+async def send_receive(recorder: ResumableMicrophoneStream):
+    async with websockets.connect(
+        URL,
+        extra_headers=(("Authorization", ASSEMBLYAI_API_KEY),),
+        ping_interval=5,
+        ping_timeout=20
+    ) as _ws:
+        await asyncio.sleep(0.1)
+        print("Receiving SessionBegins ...")
+        session_begins = await _ws.recv()
+        print(session_begins)
+        print("Sending messages ...")
+        async def send():
+            while True:
+                if send_data:
+                    try:
+                        data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
+                        data = base64.b64encode(data).decode("utf-8")
+                        json_data = json.dumps({"audio_data":str(data)})
+                        await _ws.send(json_data)
+                    except websockets.exceptions.ConnectionClosedError as e:
+                        print(e)
+                        assert e.code == 4008
+                        break
+                    except Exception as e:
+                        assert False, "Not a websocket 4008 error"
+                    await asyncio.sleep(0.01)
+                else:
+                    assert False
         
-    def terminate(self):
-        if not self.mic_manager.closed:
-            self.mic_manager.__exit__()
-        self.proc.terminate()
+        async def receive():
+            while True:
+                try:
+                    result_str = await _ws.recv()
+                    result = json.loads(result_str)
+                    if (result['message_type']=="FinalTranscript" and result['text']):
+                        print(result['text'])
+                        msg = AsrResult()
+                        msg.header = Header()
+                        msg.header.stamp = rospy.Time.now()
+                        msg.transcription = result['text']
+                        msg.confidence = result['confidence']
+                        for i in result['words']:
+                            w = Words()
+                            w.word = i['text']
+                            w.start_time = i['start']
+                            w.end_time = i['end']
+                            msg.words_list.append(w)
+                        pub_asr_result.publish(msg)
+                        rospy.loginfo(msg)
+                    elif (result['message_type']=='SessionBegins'):
+                        print(result)
+                    elif (result['message_type']=='PartialTranscript' and result['text']):
+                        # print(result['text']) # for debugging
+                        pass
+                except websockets.exceptions.ConnectionClosedError as e:
+                    print(e)
+                    assert e.code == 4008
+                    break
+                except Exception as e:
+                    assert False, "Not a websocket 4008 error"
         
-    def thread_operation(self):
-        self.ws = websocket.WebSocketApp(f"wss://api.assemblyai.com/v2/realtime/ws?sample_rate={SAMPLE_RATE}", header=self.auth_header, on_open=self.on_open, on_message=self.on_message, on_error=self.on_error, on_close=self.on_close)
-        try:
-            thread = threading.Thread(target=self.ws.run_forever)
-            thread.daemon = True
-            thread.start()
-
-            time.sleep(1)
-            
-            with self.mic_manager as stream:
-                while not stream.closed:
-                    self.send_audio(self.ws, stream)  
-        except Exception as e:
-            print(e)
-            self.ws.close()
-
-
-    def on_message(self, ws, message):
-        message = json.loads(message)
-        if message["message_type"] == "SessionBegins":
-            session_id = message["session_id"]
-            expires_at = message["expires_at"]
-            print(f"Session ID: {session_id}")
-            print(f"Expires at: {expires_at}")
-        elif self.show_intermediate and message["message_type"] == "PartialTranscript":
-            print(f"Partial transcript received: {message['text']}")
-        elif message['message_type'] == 'FinalTranscript' and message['text']:
-            print(f"Final transcript received: {message['text']}")
-            print(message['text'])
-            msg = AsrResult()
-            msg.header = Header()
-            msg.header.stamp = rospy.Time.now()
-            msg.transcription = message['text']
-            msg.confidence = message['confidence']
-            for i in message['words']:
-                w = Words()
-                w.word = i['text']
-                w.start_time = i['start']
-                w.end_time = i['end']
-                msg.words_list.append(w)
-            self.publisher.publish(msg)
-            rospy.loginfo(msg)
-
-
-    def on_error(self, ws, error):
-        print(error)
-        error_message = json.loads(error)
-        if error_message['error_code'] == 4000:
-            print("Sample rate must be a positive integer")
-        else:
-            print(error_message)
-
-    def on_close(self, *args):
-        print("WebSocket closed")
-
-    def on_open(self, ws):
-        pass
-
-    def send_audio(self, ws, recorder):
-        data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
-        data = base64.b64encode(data).decode("utf-8")
-        json_data = json.dumps({"audio_data":str(data)})
-        ws.send(json_data)
+        send_result, receive_result = await asyncio.gather(send(), receive())
 
 def main():
 
@@ -396,6 +386,8 @@ def main():
     global send_data
     send_data = True
     
+    mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
+
     ### Google Cloud Version
     '''
     client = speech.SpeechClient()
@@ -425,16 +417,18 @@ def main():
             listen_print_loop(responses, stream)
     '''
     
-    ### Assembly AI (with threading) version
-    #'''
-    thr = ASRThread()
-    thr.start()
-    print("more stuff can be done here")
+    ### Assembly AI (with asyncio) version
+    # '''
+    mic_manager.__enter__()
     
-    # Uncomment to stop ASR
-    # time.sleep(20)
-    # thr.terminate()
-    #'''
+    while True:
+        if send_data:
+            try:
+                curr_loop = asyncio.get_event_loop()
+                curr_loop.run_until_complete(send_receive(mic_manager))
+            except Exception as e:
+                print(e)
+    # '''
 
 if __name__ == '__main__':
     main()
