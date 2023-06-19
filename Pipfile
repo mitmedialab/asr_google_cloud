@@ -4,6 +4,10 @@ verify_ssl = true
 
 [packages]
 PyAudio = "*"
+assemblyai = "==0.3.2"
 google-cloud-speech = "*"
 six = "==1.10.0"
 pylint = "*"
+pyyaml = "==6.0"
+rospkg = "==1.4.0"
+websockets = "*"

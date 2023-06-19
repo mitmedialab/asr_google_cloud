@@ -103,3 +103,4 @@ ENV/
 .ropeproject
 
 prg_sst_key.json
+passwords.py
