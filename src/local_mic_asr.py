@@ -46,6 +46,7 @@ import sys
 import base64
 import websockets
 import asyncio
+from signal import SIGINT, SIGTERM
 
 from google.cloud import speech
 import assemblyai as aai
@@ -107,7 +108,7 @@ class ResumableMicrophoneStream:
         for i in range(self._audio_interface.get_device_count()):
             device_info = self._audio_interface.get_device_info_by_index(i)
             try:
-                if "USB audio" in device_info.get('name'):
+                if "USB audio CODEC" in device_info.get('name'):
                     self._input_device_index = i
                     break
             except:
@@ -314,6 +315,7 @@ async def send_receive(recorder: ResumableMicrophoneStream):
         print("Sending messages ...")
         async def send():
             while True:
+                # print("running send")
                 if send_data:
                     try:
                         data = recorder._audio_stream.read(recorder._chunk_size, exception_on_overflow=False)
@@ -321,14 +323,15 @@ async def send_receive(recorder: ResumableMicrophoneStream):
                         json_data = json.dumps({"audio_data":str(data)})
                         await _ws.send(json_data)
                     except websockets.exceptions.ConnectionClosedError as e:
-                        print(e)
+                        # print(e)
                         assert e.code == 4008
                         break
                     except Exception as e:
+                        # print(e)
                         assert False, "Not a websocket 4008 error"
                     await asyncio.sleep(0.01)
                 else:
-                    assert False
+                    await asyncio.sleep(2)
         
         async def receive():
             while True:
@@ -356,10 +359,11 @@ async def send_receive(recorder: ResumableMicrophoneStream):
                         # print(result['text']) # for debugging
                         pass
                 except websockets.exceptions.ConnectionClosedError as e:
-                    print(e)
+                    # print(e)
                     assert e.code == 4008
                     break
                 except Exception as e:
+                    # print(e)
                     assert False, "Not a websocket 4008 error"
         
         send_result, receive_result = await asyncio.gather(send(), receive())
@@ -384,7 +388,7 @@ def main():
     global publish_final
     publish_final = False
     global send_data
-    send_data = True
+    send_data = False
     
     mic_manager = ResumableMicrophoneStream(SAMPLE_RATE, CHUNK_SIZE)
 
@@ -419,14 +423,18 @@ def main():
     
     ### Assembly AI (with asyncio) version
     # '''
-    mic_manager.__enter__()
-    
     while True:
-        if send_data:
+        if True:
+            if mic_manager.closed:
+                mic_manager.__enter__()
+            curr_loop = asyncio.get_event_loop()
+            main_task = asyncio.ensure_future(send_receive(mic_manager))
+            for signal in [SIGINT, SIGTERM]:
+                curr_loop.add_signal_handler(signal, main_task.cancel)
             try:
-                curr_loop = asyncio.get_event_loop()
-                curr_loop.run_until_complete(send_receive(mic_manager))
+                curr_loop.run_until_complete(main_task)
             except Exception as e:
+                mic_manager.__exit__(0, 0, 0)
                 print(e)
     # '''
 
