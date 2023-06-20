@@ -46,6 +46,7 @@ import sys
 import base64
 import websockets
 import asyncio
+from signal import SIGINT, SIGTERM
 
 from google.cloud import speech
 import assemblyai as aai
@@ -107,7 +108,7 @@ class ResumableMicrophoneStream:
         for i in range(self._audio_interface.get_device_count()):
             device_info = self._audio_interface.get_device_info_by_index(i)
             try:
-                if "USB audio" in device_info.get('name'):
+                if "USB audio CODEC" in device_info.get('name'):
                     self._input_device_index = i
                     break
             except:
@@ -423,10 +424,15 @@ def main():
     
     while True:
         if send_data:
+            curr_loop = asyncio.get_event_loop()
+            main_task = asyncio.ensure_future(send_receive(mic_manager))
+            for signal in [SIGINT, SIGTERM]:
+                curr_loop.add_signal_handler(signal, main_task.cancel)
             try:
-                curr_loop = asyncio.get_event_loop()
-                curr_loop.run_until_complete(send_receive(mic_manager))
+                curr_loop.run_until_complete(main_task)
             except Exception as e:
+                mic_manager.__exit__()
+                curr_loop.close()
                 print(e)
     # '''
 
